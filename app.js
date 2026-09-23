@@ -32,6 +32,7 @@ import {
   calcularDistribucionPorSitio,
   calcularValidacionDiaria,
   calcularMetricasEmpleado,
+  clasificarPuntualidad,
   ordenarPorFechaHoraDesc
 } from './calculations.js';
 
@@ -47,6 +48,8 @@ const estado = {
   filtroFinPersonalizado: hoyISO(),
   fechaValidacion: hoyISO(),
   correoEmpleadoHistorial: null,
+  fechaInicioHistorial: '',
+  fechaFinHistorial: '',
   correoAuditoria: null,
   fechaAuditoria: hoyISO(),
   cargando: true,
@@ -559,6 +562,16 @@ function configurarFormularioRegistro() {
   });
 }
 
+function clasesHora(hora) {
+  const clases = {
+    temprano: 'text-emerald-400',
+    'en-rango': 'text-amber-400',
+    tarde: 'text-red-400',
+    'sin-hora': 'text-slate-400'
+  };
+  return clases[clasificarPuntualidad(hora)] || clases['sin-hora'];
+}
+
 // ----------------------------------------------------------------------------
 // IMPORTACIÓN MASIVA (JSON / CSV)
 // ----------------------------------------------------------------------------
@@ -591,35 +604,41 @@ function configurarFormularioImportacion() {
 
       if (estado.usandoDatosDemo) {
         agregarEmpleadosDesdeRegistros(registros);
-        const existentes = new Set(
-          estado.asistencias.map((asistencia) => asistencia.id || `${asistencia.correo}|${asistencia.fecha}|${asistencia.hora}`)
-        );
-        const nuevosRegistros = registros.filter((registro) => {
-          const clave = registro.id || `${registro.correo}|${registro.fecha}|${registro.hora}`;
-          if (existentes.has(clave)) return false;
-          existentes.add(clave);
-          return true;
-        });
-        nuevosRegistros.forEach((registro, i) => {
-          estado.asistencias.push({ id: registro.id || `demo-import-${Date.now()}-${i}`, ...registro });
+        const existentes = new Map(estado.asistencias.map((asistencia) => [claveAsistencia(asistencia), asistencia]));
+        let actualizados = 0;
+        let nuevos = 0;
+        registros.forEach((registro) => {
+          const existente = existentes.get(claveAsistencia(registro));
+          if (existente) {
+            Object.assign(existente, registro, { id: existente.id });
+            actualizados++;
+            return;
+          }
+          const asistenciaNueva = { id: registro.id || `demo-import-${Date.now()}-${nuevos}`, ...registro };
+          estado.asistencias.push(asistenciaNueva);
+          existentes.set(claveAsistencia(asistenciaNueva), asistenciaNueva);
+          nuevos++;
         });
         estado.asistencias = ordenarPorFechaHoraDesc(estado.asistencias);
         guardarDatosLocales();
         poblarSelectoresEmpleado();
-        estadoImport.textContent = `${nuevosRegistros.length} registros nuevos importados y guardados en este navegador.`;
+        estadoImport.textContent = `${nuevos} registros nuevos y ${actualizados} registros actualizados en este navegador.`;
       } else {
         await agregarEmpleadosEnFirebase(registros);
-        const existentes = new Set(
-          estado.asistencias.map((asistencia) => asistencia.id || `${asistencia.correo}|${asistencia.fecha}|${asistencia.hora}`)
-        );
-        const nuevosRegistros = registros.filter((registro) => {
-          const clave = registro.id || `${registro.correo}|${registro.fecha}|${registro.hora}`;
-          if (existentes.has(clave)) return false;
-          existentes.add(clave);
-          return true;
+        const existentes = new Map(estado.asistencias.map((asistencia) => [claveAsistencia(asistencia), asistencia]));
+        const nuevosRegistros = [];
+        const actualizaciones = [];
+        registros.forEach((registro) => {
+          const existente = existentes.get(claveAsistencia(registro));
+          if (existente) {
+            actualizaciones.push(guardarAsistencia(registro, existente.id));
+          } else {
+            nuevosRegistros.push(registro);
+          }
         });
+        await Promise.all(actualizaciones);
         const total = await importarAsistenciasMasivo(nuevosRegistros);
-        estadoImport.textContent = `${total} registros nuevos importados correctamente a Firebase.`;
+        estadoImport.textContent = `${total} registros nuevos y ${actualizaciones.length} registros actualizados correctamente en Firebase.`;
       }
       poblarSelectoresEmpleado();
       estadoImport.classList.remove('hidden', 'text-red-400');
@@ -633,6 +652,10 @@ function configurarFormularioImportacion() {
     }
     e.target.value = '';
   });
+}
+
+function claveAsistencia(asistencia) {
+  return `${asistencia.correo}|${asistencia.fecha}|${asistencia.hora}`;
 }
 
 async function agregarEmpleadosEnFirebase(registros) {
@@ -714,9 +737,23 @@ function normalizarRegistroImportado(registro) {
 
   const equipo = registro.equipo && typeof registro.equipo === 'object' ? registro.equipo : crearEquipoVacio();
   Object.keys(equipo).forEach((campo) => {
-    const valor = buscarValor(registro, [campo, EQUIPO_LABELS[campo]]);
+    const nombresCampo =
+      campo === 'conoAsentamiento'
+        ? [campo, EQUIPO_LABELS[campo], 'Cono de Asentamiento', 'Cono Precaucion', 'Cono de Precaucion']
+        : [campo, EQUIPO_LABELS[campo]];
+    const valor = buscarValor(registro, nombresCampo);
     if (valor !== undefined) equipo[campo] = convertirBooleano(valor);
   });
+
+  const valorConoPrecaucion = buscarValor(registro, [
+    'cono precaucion',
+    'cono de precaucion',
+    'conoAsentamiento',
+    'conoPrecaucion'
+  ]);
+  if (valorConoPrecaucion !== undefined) {
+    equipo.conoAsentamiento = convertirBooleano(valorConoPrecaucion);
+  }
 
   return {
     id: buscarValor(registro, ['id']) || '',
@@ -751,7 +788,22 @@ function normalizarEncabezado(valor) {
 
 function convertirBooleano(valor) {
   if (typeof valor === 'boolean') return valor;
-  return ['true', 'si', 'sí', '1', 'x', 'cumple', 'ok', 'confirmado', 'confirmada'].includes(
+  return [
+    'true',
+    'si',
+    'sí',
+    'yes',
+    '1',
+    'x',
+    'cumple',
+    'ok',
+    'confirmado',
+    'confirmada',
+    'marcado',
+    'marcada',
+    'presente',
+    'checked'
+  ].includes(
     String(valor).trim().toLowerCase()
   );
 }
@@ -876,7 +928,7 @@ function renderizarValidacionDiaria() {
               : '<span class="inline-flex items-center gap-1.5 rounded-full bg-red-500/15 px-2.5 py-1 text-xs font-medium text-red-400"><span class="h-1.5 w-1.5 rounded-full bg-red-400"></span>FALTÓ</span>'
           }
         </td>
-        <td class="py-3 px-4 text-slate-400">${f.hora || '—'}</td>
+        <td class="py-3 px-4 ${clasesHora(f.hora)}">${f.hora || '—'}</td>
         <td class="py-3 px-4 text-slate-400">${f.sitio || '—'}</td>
         <td class="py-3 px-4 text-slate-400">${f.cumplimientoEpp !== null ? f.cumplimientoEpp + '%' : '—'}</td>
       </tr>`
@@ -890,6 +942,14 @@ function renderizarValidacionDiaria() {
 function configurarHistorialEmpleado() {
   document.getElementById('historial-empleado')?.addEventListener('change', (e) => {
     estado.correoEmpleadoHistorial = e.target.value;
+    renderizarHistorialEmpleado();
+  });
+  document.getElementById('historial-fecha-inicio')?.addEventListener('change', (e) => {
+    estado.fechaInicioHistorial = e.target.value;
+    renderizarHistorialEmpleado();
+  });
+  document.getElementById('historial-fecha-fin')?.addEventListener('change', (e) => {
+    estado.fechaFinHistorial = e.target.value;
     renderizarHistorialEmpleado();
   });
 }
@@ -906,9 +966,12 @@ function renderizarHistorialEmpleado() {
   vacio.classList.add('hidden');
 
   const emp = estado.empleados.find((e) => e.correo === estado.correoEmpleadoHistorial);
-  const asistenciasEmpleado = estado.asistencias.filter(
-    (a) => a.correo === estado.correoEmpleadoHistorial
-  );
+  const asistenciasEmpleado = estado.asistencias.filter((a) => {
+    if (a.correo !== estado.correoEmpleadoHistorial) return false;
+    if (estado.fechaInicioHistorial && a.fecha < estado.fechaInicioHistorial) return false;
+    if (estado.fechaFinHistorial && a.fecha > estado.fechaFinHistorial) return false;
+    return true;
+  });
   const metricas = calcularMetricasEmpleado(asistenciasEmpleado);
 
   document.getElementById('historial-nombre').textContent = `${emp.nombre} ${emp.apellido}`;
@@ -929,7 +992,7 @@ function renderizarHistorialEmpleado() {
       (a) => `
       <tr class="border-b border-slate-800 hover:bg-slate-800/40">
         <td class="py-3 px-4 text-slate-300">${formatearFechaCompleta(a.fecha)}</td>
-        <td class="py-3 px-4 text-slate-400">${a.hora || '—'}</td>
+        <td class="py-3 px-4 ${clasesHora(a.hora)}">${a.hora || '—'}</td>
         <td class="py-3 px-4 text-slate-400">${a.sitioCurso || '—'}</td>
         <td class="py-3 px-4 text-slate-500 text-xs">${construirEnlaceGoogleMaps(a.geolocalizacion, '—')}</td>
         <td class="py-3 px-4">
@@ -981,7 +1044,9 @@ function renderizarAuditoria() {
       const filasChecklist = (labels, datos, tipo) =>
         Object.entries(labels)
           .map(([clave, etiqueta]) => {
-            const activo = datos && datos[clave];
+            const valor =
+              datos && (datos[clave] || (clave === 'conoAsentamiento' ? datos.conoPrecaucion : false));
+            const activo = typeof valor === 'boolean' ? valor : convertirBooleano(valor);
             return `<div class="flex items-center justify-between rounded-lg border ${
               activo ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-slate-700 bg-slate-800/40'
             } px-3 py-2 text-sm">
