@@ -222,9 +222,9 @@ export function calcularMetricasEmpleado(asistenciasEmpleado) {
         ).padStart(2, '0')}`
       : 'N/A';
 
-  const antesDe730 = horasValidas.filter((min) => min <= 7 * 60 + 30).length;
+  const antesDe720 = horasValidas.filter((min) => min <= 7 * 60 + 20).length;
   const puntualidad =
-    horasValidas.length > 0 ? Math.round((antesDe730 / horasValidas.length) * 100) : 0;
+    horasValidas.length > 0 ? Math.round((antesDe720 / horasValidas.length) * 100) : 0;
 
   return { totalDias, cumplimientoPromedio, horaPromedio, puntualidad };
 }
@@ -242,6 +242,14 @@ function convertirHoraAMinutos(valor) {
   return partes[0] * 60 + partes[1];
 }
 
+export function clasificarPuntualidad(hora) {
+  const minutos = convertirHoraAMinutos(hora);
+  if (minutos === null) return 'sin-hora';
+  if (minutos < 7 * 60 + 10) return 'temprano';
+  if (minutos <= 7 * 60 + 20) return 'en-rango';
+  return 'tarde';
+}
+
 // ----------------------------------------------------------------------------
 // ORDENAMIENTO CRONOLÓGICO
 // ----------------------------------------------------------------------------
@@ -252,3 +260,4 @@ export function ordenarPorFechaHoraDesc(asistencias) {
     return fechaHoraB.localeCompare(fechaHoraA);
   });
 }
+
