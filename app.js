@@ -811,6 +811,26 @@ function parsearCSV(texto) {
   });
 }
 
+function construirEnlaceGoogleMaps(geolocalizacion, textoAlternativo = 'Sin geolocalización') {
+  const coordenadas = String(geolocalizacion || '').trim();
+  const [latitud, longitud] = coordenadas.split(',').map((valor) => Number(valor.trim()));
+  const coordenadasValidas =
+    coordenadas &&
+    Number.isFinite(latitud) &&
+    Number.isFinite(longitud) &&
+    latitud >= -90 &&
+    latitud <= 90 &&
+    longitud >= -180 &&
+    longitud <= 180;
+
+  if (!coordenadasValidas) return textoAlternativo;
+
+  const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+    `${latitud},${longitud}`
+  )}`;
+  return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-blue-400 underline decoration-blue-400/40 underline-offset-2 hover:text-teal-400">${coordenadas}</a>`;
+}
+
 // ----------------------------------------------------------------------------
 // 3. VALIDACIÓN DIARIA
 // ----------------------------------------------------------------------------
@@ -911,7 +931,7 @@ function renderizarHistorialEmpleado() {
         <td class="py-3 px-4 text-slate-300">${formatearFechaCompleta(a.fecha)}</td>
         <td class="py-3 px-4 text-slate-400">${a.hora || '—'}</td>
         <td class="py-3 px-4 text-slate-400">${a.sitioCurso || '—'}</td>
-        <td class="py-3 px-4 text-slate-500 text-xs">${a.geolocalizacion || '—'}</td>
+        <td class="py-3 px-4 text-slate-500 text-xs">${construirEnlaceGoogleMaps(a.geolocalizacion, '—')}</td>
         <td class="py-3 px-4">
           <span class="rounded-full px-2.5 py-1 text-xs font-medium ${
             calcularCumplimientoEppIndividual(a.epp) >= 80
@@ -978,7 +998,7 @@ function renderizarAuditoria() {
             <h4 class="font-semibold text-slate-100">${a.nombre} ${a.apellido}</h4>
             <p class="text-xs text-slate-500">${a.correo} · ${a.sitioCurso || 'Sin sitio'} · ${a.hora || '—'}</p>
           </div>
-          <span class="text-xs text-slate-500">${a.geolocalizacion || 'Sin geolocalización'}</span>
+          <span class="text-xs text-slate-500">${construirEnlaceGoogleMaps(a.geolocalizacion)}</span>
         </div>
         <div class="grid gap-4 md:grid-cols-2">
           <div>
@@ -1023,3 +1043,4 @@ function mostrarToast(mensaje, tipo = 'exito') {
 // ARRANQUE
 // ----------------------------------------------------------------------------
 document.addEventListener('DOMContentLoaded', iniciar);
+
