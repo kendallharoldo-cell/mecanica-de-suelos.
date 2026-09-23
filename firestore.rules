@@ -1,0 +1,59 @@
+rules_version = '2';
+
+// ============================================================================
+// Reglas de seguridad de Firestore — Dashboard de Control de Asistencia y EPP
+// ============================================================================
+//
+// Estas reglas asumen dos modos de uso posibles:
+//
+//  1) MODO ABIERTO (solo para pruebas / demo interna): cualquiera con el
+//     enlace puede leer y escribir. NO USAR EN PRODUCCIÓN.
+//
+//  2) MODO AUTENTICADO (recomendado): solo usuarios autenticados con
+//     Firebase Authentication (correo/contraseña, Google, etc.) pueden leer
+//     y escribir. Actívalo descomentando el bloque "MODO AUTENTICADO" y
+//     comentando el bloque "MODO ABIERTO".
+//
+// Consulta el README.md para instrucciones sobre cómo habilitar
+// Firebase Authentication si decides usar el modo autenticado.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------------------------------------------------------------------
+    // MODO ABIERTO (activo por defecto para facilitar la primera prueba)
+    // ---------------------------------------------------------------------
+    match /empleados/{empleadoId} {
+      allow read, write: if true;
+    }
+
+    match /asistencias/{asistenciaId} {
+      allow read, write: if true;
+    }
+
+    // ---------------------------------------------------------------------
+    // MODO AUTENTICADO (recomendado para producción)
+    // Descomenta este bloque y comenta el "MODO ABIERTO" de arriba.
+    // ---------------------------------------------------------------------
+    //
+    // match /empleados/{empleadoId} {
+    //   allow read: if request.auth != null;
+    //   allow write: if request.auth != null;
+    // }
+    //
+    // match /asistencias/{asistenciaId} {
+    //   allow read: if request.auth != null;
+    //   allow create: if request.auth != null
+    //     && request.resource.data.keys().hasAll(['correo', 'fecha', 'hora', 'sitioCurso', 'epp'])
+    //     && request.resource.data.correo is string
+    //     && request.resource.data.fecha is string
+    //     && request.resource.data.epp is map;
+    //   allow update, delete: if request.auth != null;
+    // }
+
+    // Bloquea cualquier otra colección no contemplada explícitamente.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

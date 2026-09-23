@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="es" class="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Mecánica de Suelos · Control de Asistencia y EPP</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink-950: #0b1220;
+    --ink-900: #111b2d;
+    --ink-800: #1b2940;
+    --ink-700: #2a3b55;
+    --mist-400: #a7b4c8;
+    --mist-500: #7f8da3;
+    --teal-400: #39d6c2;
+    --teal-500: #16b7a5;
+    --amber-400: #f5b84b;
+    --rose-400: #f27c8c;
+  }
+
+  body {
+    font-family: 'Manrope', system-ui, sans-serif;
+    background-color: var(--ink-950) !important;
+    background-image: linear-gradient(rgba(44, 63, 88, 0.14) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(44, 63, 88, 0.14) 1px, transparent 1px) !important;
+    background-size: 32px 32px !important;
+  }
+
+  header {
+    background: rgba(11, 18, 32, 0.88) !important;
+    border-color: rgba(104, 127, 157, 0.24) !important;
+  }
+
+  header h1 { letter-spacing: -0.02em; }
+
+  aside {
+    background: rgba(17, 27, 45, 0.96) !important;
+    border-color: rgba(104, 127, 157, 0.22) !important;
+    box-shadow: 12px 0 36px rgba(0, 0, 0, 0.16);
+  }
+
+  aside > div:first-child { border-color: rgba(104, 127, 157, 0.22) !important; }
+
+  aside nav button {
+    color: var(--mist-400) !important;
+    border: 1px solid transparent;
+  }
+
+  aside nav button:hover {
+    color: #e7f3f2 !important;
+    background: rgba(57, 214, 194, 0.08) !important;
+    border-color: rgba(57, 214, 194, 0.16);
+  }
+
+  aside nav button.bg-blue-600\/20 {
+    color: var(--teal-400) !important;
+    background: rgba(22, 183, 165, 0.13) !important;
+    border-color: rgba(57, 214, 194, 0.28);
+  }
+
+  main .rounded-xl.border,
+  main .rounded-lg.border {
+    border-color: rgba(104, 127, 157, 0.24) !important;
+    background-color: rgba(17, 27, 45, 0.78) !important;
+    box-shadow: 0 14px 28px rgba(0, 0, 0, 0.1);
+  }
+
+  main .rounded-xl.border:hover { border-color: rgba(57, 214, 194, 0.25) !important; }
+
+  input, select, textarea {
+    border-color: var(--ink-700) !important;
+    background-color: rgba(11, 18, 32, 0.72) !important;
+    color: #e7edf6 !important;
+  }
+
+  input:focus, select:focus, textarea:focus {
+    border-color: var(--teal-500) !important;
+    box-shadow: 0 0 0 3px rgba(22, 183, 165, 0.12);
+  }
+
+  button.bg-blue-600 {
+    background: linear-gradient(135deg, var(--teal-500), #168ca0) !important;
+    box-shadow: 0 8px 18px rgba(22, 183, 165, 0.16);
+  }
+
+  button.bg-blue-600:hover { background: linear-gradient(135deg, #25cdb8, #1ca7bb) !important; }
+
+  .text-blue-400 { color: var(--teal-400) !important; }
+  .text-emerald-400 { color: #53d6a2 !important; }
+  .text-amber-400 { color: var(--amber-400) !important; }
+  .text-red-400 { color: var(--rose-400) !important; }
+  .text-slate-500 { color: var(--mist-500) !important; }
+  .text-slate-400 { color: var(--mist-400) !important; }
+
+  table thead { background: rgba(42, 59, 85, 0.26); }
+  table tr { border-color: rgba(104, 127, 157, 0.16) !important; }
+  table tbody tr:hover { background: rgba(57, 214, 194, 0.05) !important; }
+
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: var(--ink-950); }
+  ::-webkit-scrollbar-thumb { background: var(--ink-700); border-radius: 8px; }
+  ::-webkit-scrollbar-thumb:hover { background: #3d5574; }
+  .vista-panel.hidden { display: none; }
+</style>
+</head>
+<body class="bg-slate-950 text-slate-200 min-h-screen">
+
+<div id="toast-contenedor" class="fixed top-4 right-4 z-50 flex flex-col gap-2 w-80"></div>
+
+<div class="flex min-h-screen">
+
+  <!-- ============================= SIDEBAR ============================= -->
+  <aside id="sidebar" class="fixed z-40 inset-y-0 left-0 w-64 -translate-x-full transform border-r border-slate-800 bg-slate-900/95 backdrop-blur transition-transform duration-200 lg:static lg:translate-x-0">
+    <div class="flex h-16 items-center gap-2 border-b border-slate-800 px-5">
+      <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-600 text-sm font-bold text-white">EP</div>
+      <div>
+        <p class="text-sm font-semibold text-slate-100 leading-tight">Control de Asistencia</p>
+        <p class="text-xs text-slate-500 leading-tight">y EPP</p>
+      </div>
+    </div>
+    <nav class="flex flex-col gap-1 p-3">
+      <button data-vista="dashboard" class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium bg-blue-600/20 text-blue-400 transition-colors">
+        <span>📊</span> Dashboard General
+      </button>
+      <button data-vista="registro" class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-400 hover:bg-slate-800/60 transition-colors">
+        <span>➕</span> Registro y Actualización
+      </button>
+      <button data-vista="validacion" class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-400 hover:bg-slate-800/60 transition-colors">
+        <span>🔍</span> Validación Diaria
+      </button>
+      <button data-vista="historial" class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-400 hover:bg-slate-800/60 transition-colors">
+        <span>👤</span> Historial por Empleado
+      </button>
+      <button data-vista="auditoria" class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-400 hover:bg-slate-800/60 transition-colors">
+        <span>🧰</span> Detalle de Equipo
+      </button>
+    </nav>
+    <div id="banner-demo" class="hidden mx-3 mt-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-400">
+      Modo demostración: Firebase no está configurado o no tiene datos. Se muestran datos de ejemplo. Edita <code>src/firebase-config.js</code> para conectar tu proyecto.
+    </div>
+  </aside>
+
+  <!-- ============================= CONTENIDO ============================= -->
+  <div class="flex-1 lg:pl-0">
+    <header class="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-slate-800 bg-slate-950/90 backdrop-blur px-4 lg:px-8">
+      <button id="menu-toggle" class="lg:hidden rounded-lg border border-slate-700 p-2 text-slate-400">☰</button>
+      <h1 class="text-lg font-semibold text-slate-100">Mecánica de Suelos · Control de Asistencia y EPP</h1>
+      <div class="hidden sm:block text-xs text-slate-500" id="reloj"></div>
+    </header>
+
+    <main class="p-4 lg:p-8">
+
+      <!-- ======================= VISTA 1: DASHBOARD ======================= -->
+      <section id="vista-dashboard" class="vista-panel space-y-6">
+
+        <div class="flex flex-wrap items-center gap-2">
+          <button data-periodo="hoy" class="rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-slate-400 hover:bg-slate-700 transition-colors">Hoy</button>
+          <button data-periodo="semana" class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors">Esta Semana</button>
+          <button data-periodo="mes" class="rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-slate-400 hover:bg-slate-700 transition-colors">Este Mes</button>
+          <button data-periodo="personalizado" class="rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-slate-400 hover:bg-slate-700 transition-colors">Rango Personalizado</button>
+          <div id="rango-personalizado" class="hidden flex items-center gap-2 ml-2">
+            <input type="date" id="filtro-fecha-inicio" class="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-300" />
+            <span class="text-slate-500">a</span>
+            <input type="date" id="filtro-fecha-fin" class="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-300" />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <p class="text-xs font-medium uppercase tracking-wide text-slate-500">Total Asistencias</p>
+            <p id="kpi-total-asistencias" class="mt-2 text-3xl font-bold text-slate-100">0</p>
+            <p class="mt-1 text-xs text-slate-500">Registradas en el período</p>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <p class="text-xs font-medium uppercase tracking-wide text-slate-500">Cumplimiento Global EPP</p>
+            <p id="kpi-cumplimiento-epp" class="mt-2 text-3xl font-bold text-emerald-400">0%</p>
+            <p class="mt-1 text-xs text-slate-500">Promedio de los 10 ítems</p>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <p class="text-xs font-medium uppercase tracking-wide text-slate-500">Presentes Hoy</p>
+            <p id="kpi-presentes" class="mt-2 text-3xl font-bold text-blue-400">0 / 0</p>
+            <p id="kpi-ausentes" class="mt-1 text-xs text-slate-500">0 ausentes hoy</p>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <p class="text-xs font-medium uppercase tracking-wide text-slate-500">Sitio con Mayor Actividad</p>
+            <p id="kpi-sitio-top" class="mt-2 text-2xl font-bold text-slate-100">—</p>
+            <p id="kpi-sitio-top-detalle" class="mt-1 text-xs text-slate-500">0 marcas registradas</p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 gap-4 xl:grid-cols-3">
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5 xl:col-span-2">
+            <h3 class="mb-4 text-sm font-semibold text-slate-200">Tendencia de Asistencia Diaria</h3>
+            <div class="h-72"><canvas id="grafica-tendencia"></canvas></div>
+          </div>
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <h3 class="mb-4 text-sm font-semibold text-slate-200">Distribución por Sitio / Curso</h3>
+            <div class="h-72"><canvas id="grafica-distribucion-sitio"></canvas></div>
+          </div>
+        </div>
+
+        <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+          <h3 class="mb-4 text-sm font-semibold text-slate-200">% de Cumplimiento por Ítem de EPP</h3>
+          <div class="h-96"><canvas id="grafica-epp-items"></canvas></div>
+        </div>
+      </section>
+
+      <!-- ======================= VISTA 2: REGISTRO ======================= -->
+      <section id="vista-registro" class="vista-panel hidden space-y-6">
+        <div class="grid grid-cols-1 gap-6 xl:grid-cols-3">
+          <form id="form-registro" class="xl:col-span-2 space-y-5 rounded-xl border border-slate-800 bg-slate-900/60 p-6">
+            <h3 class="text-sm font-semibold text-slate-200">Registrar Nueva Marca de Asistencia</h3>
+
+            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div class="sm:col-span-2">
+                <label class="mb-1 block text-xs font-medium text-slate-400">Empleado</label>
+                <select id="registro-empleado" required class="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm text-slate-200 focus:border-blue-500 focus:outline-none"></select>
+                <p id="registro-nombre-preview" class="mt-1 text-xs text-blue-400"></p>
+              </div>
+              <div>
+                <label class="mb-1 block text-xs font-medium text-slate-400">Fecha</label>
+                <input type="date" id="registro-fecha" required class="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm text-slate-200 focus:border-blue-500 focus:outline-none" />
+              </div>
+              <div>
+                <label class="mb-1 block text-xs font-medium text-slate-400">Hora</label>
+                <input type="time" step="1" id="registro-hora" required class="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm text-slate-200 focus:border-blue-500 focus:outline-none" />
+              </div>
+              <div>
+                <label class="mb-1 block text-xs font-medium text-slate-400">Sitio / Obra / Curso</label>
+                <input type="text" id="registro-sitio" placeholder="Ej. Gabinete, El Pulte…" required class="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm text-slate-200 focus:border-blue-500 focus:outline-none" />
+              </div>
+              <div>
+                <label class="mb-1 block text-xs font-medium text-slate-400">Coordenadas</label>
+                <div class="flex gap-2">
+                  <input type="text" id="registro-geo" placeholder="14.585397, -90.585960" class="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm text-slate-200 focus:border-blue-500 focus:outline-none" />
+                  <button type="button" id="btn-geolocalizacion" class="shrink-0 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm text-slate-300 hover:bg-slate-700">📍</button>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <p class="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">Checklist EPP (10 ítems obligatorios)</p>
+              <div id="checklist-epp" class="grid grid-cols-2 gap-2 sm:grid-cols-3"></div>
+            </div>
+
+            <div>
+              <p class="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">Equipo y Herramientas</p>
+              <div id="checklist-equipo" class="grid max-h-56 grid-cols-2 gap-2 overflow-y-auto pr-1 sm:grid-cols-3"></div>
+            </div>
+
+            <button id="btn-guardar-registro" type="submit" class="w-full rounded-lg bg-blue-600 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-500 transition-colors">Guardar en Firebase</button>
+          </form>
+
+          <div class="space-y-4 rounded-xl border border-slate-800 bg-slate-900/60 p-6">
+            <h3 class="text-sm font-semibold text-slate-200">Importación Masiva</h3>
+            <p class="text-xs text-slate-500">Carga inicial de registros de asistencia mediante un archivo JSON o CSV. Columnas esperadas: correo, nombre, apellido, sitioCurso, fecha, hora, geolocalizacion, epp, equipo.</p>
+            <label class="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-700 px-4 py-8 text-center hover:border-blue-500/50 transition-colors">
+              <span class="text-2xl">📁</span>
+              <span class="text-sm text-slate-400">Selecciona un archivo Excel, JSON o CSV</span>
+              <input type="file" id="input-importar" accept=".xlsx,.xls,.json,.csv" class="hidden" />
+            </label>
+            <button type="button" id="btn-limpiar-datos" class="w-full rounded-lg border border-red-500/40 px-4 py-2.5 text-sm font-medium text-red-400 hover:bg-red-500/10 transition-colors">🗑️ Limpiar datos de prueba</button>
+            <p id="estado-importacion" class="hidden text-xs"></p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ======================= VISTA 3: VALIDACIÓN DIARIA ======================= -->
+      <section id="vista-validacion" class="vista-panel hidden space-y-6">
+        <div class="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+          <div>
+            <h3 class="text-sm font-semibold text-slate-200">Validación Diaria: Quién Marcó vs Quién Faltó</h3>
+            <p id="validacion-resumen" class="mt-1 text-xs text-slate-500"></p>
+          </div>
+          <input type="date" id="validacion-fecha" class="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-300 focus:border-blue-500 focus:outline-none" />
+        </div>
+
+        <div class="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900/60">
+          <table class="w-full text-left text-sm">
+            <thead>
+              <tr class="border-b border-slate-800 text-xs uppercase tracking-wide text-slate-500">
+                <th class="py-3 px-4">Empleado</th>
+                <th class="py-3 px-4">Estado</th>
+                <th class="py-3 px-4">Hora</th>
+                <th class="py-3 px-4">Sitio</th>
+                <th class="py-3 px-4">% EPP</th>
+              </tr>
+            </thead>
+            <tbody id="tabla-validacion"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ======================= VISTA 4: HISTORIAL POR EMPLEADO ======================= -->
+      <section id="vista-historial" class="vista-panel hidden space-y-6">
+        <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+          <label class="mb-1 block text-xs font-medium text-slate-400">Selecciona un empleado</label>
+          <select id="historial-empleado" class="w-full max-w-md rounded-lg border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm text-slate-200 focus:border-blue-500 focus:outline-none"></select>
+        </div>
+
+        <div id="historial-vacio" class="rounded-xl border border-dashed border-slate-800 p-12 text-center text-slate-500">
+          Selecciona un empleado para ver su historial detallado.
+        </div>
+
+        <div id="historial-contenido" class="hidden space-y-6">
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5 xl:col-span-2">
+              <h4 id="historial-nombre" class="text-lg font-semibold text-slate-100"></h4>
+              <p id="historial-puesto" class="text-sm text-blue-400"></p>
+              <p id="historial-correo" class="mt-2 text-xs text-slate-500"></p>
+              <p id="historial-celular" class="text-xs text-slate-500"></p>
+            </div>
+            <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+              <p class="text-xs font-medium uppercase tracking-wide text-slate-500">Días Asistidos</p>
+              <p id="historial-dias" class="mt-2 text-2xl font-bold text-slate-100">0</p>
+            </div>
+            <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+              <p class="text-xs font-medium uppercase tracking-wide text-slate-500">Puntualidad</p>
+              <p id="historial-puntualidad" class="mt-2 text-2xl font-bold text-blue-400">0%</p>
+            </div>
+          </div>
+
+          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+            <p class="text-xs font-medium uppercase tracking-wide text-slate-500">% Promedio Cumplimiento EPP</p>
+            <p id="historial-cumplimiento" class="mt-2 text-2xl font-bold text-emerald-400">0%</p>
+          </div>
+
+          <div class="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900/60">
+            <table class="w-full text-left text-sm">
+              <thead>
+                <tr class="border-b border-slate-800 text-xs uppercase tracking-wide text-slate-500">
+                  <th class="py-3 px-4">Fecha</th>
+                  <th class="py-3 px-4">Hora</th>
+                  <th class="py-3 px-4">Sitio</th>
+                  <th class="py-3 px-4">Geoposición</th>
+                  <th class="py-3 px-4">% EPP</th>
+                </tr>
+              </thead>
+              <tbody id="tabla-historial"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ======================= VISTA 5: DETALLE DE EQUIPO Y AUDITORÍA ======================= -->
+      <section id="vista-auditoria" class="vista-panel hidden space-y-6">
+        <div class="flex flex-wrap items-center gap-4 rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+          <div>
+            <label class="mb-1 block text-xs font-medium text-slate-400">Empleado</label>
+            <select id="auditoria-empleado" class="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-300 focus:border-blue-500 focus:outline-none"></select>
+          </div>
+          <div>
+            <label class="mb-1 block text-xs font-medium text-slate-400">Fecha</label>
+            <input type="date" id="auditoria-fecha" class="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-300 focus:border-blue-500 focus:outline-none" />
+          </div>
+        </div>
+
+        <div id="auditoria-contenido"></div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<script type="module" src="app.js"></script>
+<script>
+  function actualizarReloj() {
+    const el = document.getElementById('reloj');
+    if (el) el.textContent = new Date().toLocaleString('es-GT', { dateStyle: 'medium', timeStyle: 'medium' });
+  }
+  actualizarReloj();
+  setInterval(actualizarReloj, 1000);
+</script>
+</body>
+</html>
