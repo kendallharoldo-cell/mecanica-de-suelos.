@@ -51,7 +51,7 @@ const ASISTENCIAS_COL = 'asistencias';
 // 3. HELPERS
 // ----------------------------------------------------------------------------
 function mapDocs(snapshot) {
-  return snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+  return snapshot.docs.map((d) => ({ ...d.data(), id: d.id }));
 }
 
 export function crearEppVacio() {
@@ -88,7 +88,39 @@ export function crearEquipoVacio() {
     speedy: false,
     estufaGas: false,
     arenaCalibrada: false,
-    balanzas: false
+    balanzas: false,
+    masoCompactadorGrande: false,
+    masoCompactadorPequeno: false,
+    moldeCompactacionGrande: false,
+    moldeCompactacionPequeno: false,
+    bandejaProctor: false,
+    rasadoraProctor: false,
+    probetaProctor: false,
+    cucharonProctor: false,
+    espatulaProctor: false,
+    brochaProctor: false,
+    cintaMetrica: false,
+    brochaDensidad: false,
+    cajonMadera: false,
+    cajonPlastico: false,
+    tamizUnaPulgadaYMedia: false,
+    tamizTresCuartosPulgada: false,
+    vidrioHumedad: false,
+    estufaGasButano: false,
+    tarros: false,
+    palanganas: false,
+    clavos: false,
+    cuchara: false,
+    formon: false,
+    martillo: false,
+    embudoSeisPulgadas: false,
+    embudoCuatroPulgadas: false,
+    picnometro: false,
+    platoPerforadoGrande: false,
+    platoPerforadoPequeno: false,
+    balanzaDigitalGrande: false,
+    balanzaDigitalPequena: false,
+    gasButano: false
   };
 }
 
@@ -108,7 +140,7 @@ export const EPP_LABELS = {
 export const EQUIPO_LABELS = {
   moldesCilindros: 'Moldes de Cilindros',
   termometro: 'Termómetro',
-  conoAsentamiento: 'Cono de Asentamiento',
+  conoAsentamiento: 'Cono Precaución',
   varilla: 'Varilla',
   planchaAsentamiento: 'Plancha de Asentamiento',
   barraRasadora: 'Barra Rasadora',
@@ -123,7 +155,39 @@ export const EQUIPO_LABELS = {
   speedy: 'Speedy',
   estufaGas: 'Estufa de Gas',
   arenaCalibrada: 'Arena Calibrada',
-  balanzas: 'Balanzas'
+  balanzas: 'Balanzas',
+  masoCompactadorGrande: 'Maso Compactador Grande',
+  masoCompactadorPequeno: 'Maso Compactador Pequeño',
+  moldeCompactacionGrande: 'Molde Compactación Grande',
+  moldeCompactacionPequeno: 'Molde Compactación Pequeño',
+  bandejaProctor: 'Bandeja Proctor',
+  rasadoraProctor: 'Rasadora Proctor',
+  probetaProctor: 'Probeta Proctor',
+  cucharonProctor: 'Cucharón Proctor',
+  espatulaProctor: 'Espátula Proctor',
+  brochaProctor: 'Brocha Proctor',
+  cintaMetrica: 'Cinta Métrica',
+  brochaDensidad: 'Brocha Densidad',
+  cajonMadera: 'Cajón Madera',
+  cajonPlastico: 'Cajón Plástico',
+  tamizUnaPulgadaYMedia: 'Tamiz 1 1/2 plg',
+  tamizTresCuartosPulgada: 'Tamiz 3/4 plg',
+  vidrioHumedad: 'Vidrio Humedad',
+  estufaGasButano: 'Estufa Gas Butano',
+  tarros: 'Tarros',
+  palanganas: 'Palanganas',
+  clavos: 'Clavos',
+  cuchara: 'Cuchara',
+  formon: 'Formón',
+  martillo: 'Martillo',
+  embudoSeisPulgadas: 'Embudo 6 plg',
+  embudoCuatroPulgadas: 'Embudo 4 plg',
+  picnometro: 'Picnómetro',
+  platoPerforadoGrande: 'Plato Perforado Grande',
+  platoPerforadoPequeno: 'Plato Perforado Pequeño',
+  balanzaDigitalGrande: 'Balanza Digital Grande',
+  balanzaDigitalPequena: 'Balanza Digital Pequeña',
+  gasButano: 'Gas Butano'
 };
 
 // ----------------------------------------------------------------------------
@@ -264,3 +328,4 @@ export function sincronizarRealtime(callbackEmpleados, callbackAsistencias) {
     unsubAsistencias();
   };
 }
+
