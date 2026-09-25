@@ -116,6 +116,17 @@
 
 <div id="toast-contenedor" class="fixed top-4 right-4 z-50 flex flex-col gap-2 w-80"></div>
 
+<div id="confirm-modal" class="fixed inset-0 z-[60] hidden items-center justify-center bg-slate-950/70 backdrop-blur-sm">
+  <div class="w-full max-w-sm rounded-xl border border-slate-800 bg-slate-900 p-5 shadow-2xl">
+    <h3 class="text-sm font-semibold text-slate-100">Confirmar acción</h3>
+    <p id="confirm-modal-text" class="mt-2 text-sm text-slate-400">¿Deseas continuar?</p>
+    <div class="mt-5 flex justify-end gap-2">
+      <button id="confirm-cancel" type="button" class="rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-300 hover:bg-slate-700 transition-colors">Cancelar</button>
+      <button id="confirm-accept" type="button" class="rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-500 transition-colors">Aceptar</button>
+    </div>
+  </div>
+</div>
+
 <div class="flex min-h-screen">
 
   <!-- ============================= SIDEBAR ============================= -->
@@ -141,7 +152,7 @@
         <span>👤</span> Historial por Empleado
       </button>
       <button data-vista="auditoria" class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-400 hover:bg-slate-800/60 transition-colors">
-        <span>🧰</span> Detalle de Equipo
+        <span>�</span> Auditoría
       </button>
     </nav>
     <div id="banner-demo" class="hidden mx-3 mt-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-400">
@@ -245,6 +256,10 @@
                   <button type="button" id="btn-geolocalizacion" class="shrink-0 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm text-slate-300 hover:bg-slate-700">📍</button>
                 </div>
               </div>
+              <div class="sm:col-span-2">
+                <label class="mb-1 block text-xs font-medium text-slate-400">Nota de justificación</label>
+                <textarea id="registro-nota" rows="2" placeholder="Ej. Retraso por tráfico, permiso médico, trámite institucional..." class="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm text-slate-200 focus:border-blue-500 focus:outline-none"></textarea>
+              </div>
             </div>
 
             <div>
@@ -293,6 +308,7 @@
                 <th class="py-3 px-4">Hora</th>
                 <th class="py-3 px-4">Sitio</th>
                 <th class="py-3 px-4">% EPP</th>
+                <th class="py-3 px-4">Nota</th>
               </tr>
             </thead>
             <tbody id="tabla-validacion"></tbody>
@@ -363,6 +379,10 @@
 
       <!-- ======================= VISTA 5: DETALLE DE EQUIPO Y AUDITORÍA ======================= -->
       <section id="vista-auditoria" class="vista-panel hidden space-y-6">
+        <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+          <h3 class="text-sm font-semibold text-slate-200">Auditoría de Equipo y Justificación</h3>
+        </div>
+
         <div class="flex flex-wrap items-center gap-4 rounded-xl border border-slate-800 bg-slate-900/60 p-5">
           <div>
             <label class="mb-1 block text-xs font-medium text-slate-400">Empleado</label>
