@@ -87,7 +87,9 @@ export function calcularCumplimientoEppIndividual(epp) {
 }
 
 export function calcularPresentesVsAusentes(empleadosActivos, asistenciasHoy) {
-  const correosPresentes = new Set(asistenciasHoy.map((a) => a.correo));
+  const correosPresentes = new Set(
+    asistenciasHoy.filter((a) => !a.ausencia).map((a) => a.correo)
+  );
   const presentes = empleadosActivos.filter((e) => correosPresentes.has(e.correo)).length;
   const ausentes = empleadosActivos.length - presentes;
   return { presentes, ausentes, total: empleadosActivos.length };
@@ -171,6 +173,12 @@ export function calcularDistribucionPorSitio(asistencias) {
 export function calcularValidacionDiaria(empleadosActivos, asistenciasDelDia) {
   const mapaAsistencias = new Map();
   asistenciasDelDia.forEach((a) => {
+    if (a.ausencia) {
+      if (!mapaAsistencias.has(a.correo) || mapaAsistencias.get(a.correo).ausencia === false) {
+        mapaAsistencias.set(a.correo, a);
+      }
+      return;
+    }
     if (!mapaAsistencias.has(a.correo)) {
       mapaAsistencias.set(a.correo, a);
     }
@@ -179,11 +187,22 @@ export function calcularValidacionDiaria(empleadosActivos, asistenciasDelDia) {
   return empleadosActivos
     .map((emp) => {
       const marca = mapaAsistencias.get(emp.correo);
+      if (marca && marca.ausencia) {
+        return {
+          empleado: emp,
+          marco: false,
+          hora: null,
+          sitio: 'No asistió',
+          nota: marca.nota || 'No llegó a trabajar.',
+          cumplimientoEpp: null
+        };
+      }
       return {
         empleado: emp,
         marco: Boolean(marca),
         hora: marca ? marca.hora : null,
         sitio: marca ? marca.sitioCurso : null,
+        nota: marca ? marca.nota : null,
         cumplimientoEpp: marca ? calcularCumplimientoEppIndividual(marca.epp) : null
       };
     })
@@ -199,8 +218,9 @@ export function calcularValidacionDiaria(empleadosActivos, asistenciasDelDia) {
 // HISTORIAL POR EMPLEADO
 // ----------------------------------------------------------------------------
 export function calcularMetricasEmpleado(asistenciasEmpleado) {
-  const totalDias = asistenciasEmpleado.length;
-  const sumaCumplimiento = asistenciasEmpleado.reduce(
+  const asistenciasValidas = asistenciasEmpleado.filter((a) => !a.ausencia);
+  const totalDias = asistenciasValidas.length;
+  const sumaCumplimiento = asistenciasValidas.reduce(
     (acc, a) => acc + calcularCumplimientoEppIndividual(a.epp),
     0
   );
