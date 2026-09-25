@@ -143,6 +143,7 @@ async function iniciar() {
   configurarValidacionDiaria();
   configurarHistorialEmpleado();
   configurarAuditoria();
+  configurarConfirmacion();
   configurarFiltroPeriodo();
 
   if (MODO_PRUEBA_LOCAL) {
@@ -530,6 +531,7 @@ function configurarFormularioRegistro() {
       fecha: document.getElementById('registro-fecha').value,
       hora: document.getElementById('registro-hora').value,
       geolocalizacion: document.getElementById('registro-geo').value,
+      nota: document.getElementById('registro-nota').value.trim(),
       epp,
       equipo
     };
@@ -764,6 +766,7 @@ function normalizarRegistroImportado(registro) {
     fecha: convertirFechaImportada(buscarValor(registro, ['fecha'])),
     hora: convertirHoraImportada(buscarValor(registro, ['hora'])),
     geolocalizacion: buscarValor(registro, ['geolocalizacion', 'coordenadas']) || '',
+    nota: buscarValor(registro, ['nota', 'observacion', 'justificacion', 'motivo', 'comentario', 'notas']) || '',
     epp,
     equipo
   };
@@ -909,7 +912,7 @@ function renderizarValidacionDiaria() {
   if (!tbody) return;
 
   if (filas.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="5" class="py-6 text-center text-slate-500">No hay empleados activos registrados.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" class="py-6 text-center text-slate-500">No hay empleados activos registrados.</td></tr>`;
     return;
   }
 
@@ -931,6 +934,7 @@ function renderizarValidacionDiaria() {
         <td class="py-3 px-4 ${clasesHora(f.hora)}">${f.hora || '—'}</td>
         <td class="py-3 px-4 text-slate-400">${f.sitio || '—'}</td>
         <td class="py-3 px-4 text-slate-400">${f.cumplimientoEpp !== null ? f.cumplimientoEpp + '%' : '—'}</td>
+        <td class="py-3 px-4 text-slate-400 text-xs">${f.nota ? f.nota : '—'}</td>
       </tr>`
     )
     .join('');
@@ -968,6 +972,7 @@ function renderizarHistorialEmpleado() {
   const emp = estado.empleados.find((e) => e.correo === estado.correoEmpleadoHistorial);
   const asistenciasEmpleado = estado.asistencias.filter((a) => {
     if (a.correo !== estado.correoEmpleadoHistorial) return false;
+    if (a.ausencia) return false;
     if (estado.fechaInicioHistorial && a.fecha < estado.fechaInicioHistorial) return false;
     if (estado.fechaFinHistorial && a.fecha > estado.fechaFinHistorial) return false;
     return true;
@@ -984,7 +989,7 @@ function renderizarHistorialEmpleado() {
 
   const tbody = document.getElementById('tabla-historial');
   if (asistenciasEmpleado.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="5" class="py-6 text-center text-slate-500">Sin registros de asistencia.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" class="py-6 text-center text-slate-500">Sin registros de asistencia.</td></tr>`;
     return;
   }
   tbody.innerHTML = asistenciasEmpleado
@@ -1004,6 +1009,7 @@ function renderizarHistorialEmpleado() {
               : 'bg-red-500/15 text-red-400'
           }">${calcularCumplimientoEppIndividual(a.epp)}%</span>
         </td>
+        <td class="py-3 px-4 text-slate-400 text-xs">${a.nota ? a.nota : '—'}</td>
       </tr>`
     )
     .join('');
@@ -1028,12 +1034,86 @@ function configurarAuditoria() {
 }
 
 function renderizarAuditoria() {
-  let registros = estado.asistencias.filter((a) => a.fecha === estado.fechaAuditoria);
+  let registros = estado.asistencias.filter((a) => a.fecha === estado.fechaAuditoria && !a.ausencia);
   if (estado.correoAuditoria) {
     registros = registros.filter((a) => a.correo === estado.correoAuditoria);
   }
 
   const contenedor = document.getElementById('auditoria-contenido');
+  const empleadoSeleccionado = estado.correoAuditoria
+    ? estado.empleados.find((emp) => emp.correo === estado.correoAuditoria)
+    : null;
+
+  if (estado.correoAuditoria && empleadoSeleccionado && registros.length === 0) {
+    const ausencia = estado.asistencias.find(
+      (a) => a.fecha === estado.fechaAuditoria && a.correo === estado.correoAuditoria && a.ausencia
+    );
+    const notaActual = ausencia?.nota || 'No llegó a trabajar.';
+
+    contenedor.innerHTML = `
+      <div class="rounded-xl border border-dashed border-slate-700 bg-slate-900/50 p-5">
+        <div class="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <h4 class="font-semibold text-slate-100">${empleadoSeleccionado.nombre} ${empleadoSeleccionado.apellido}</h4>
+            <p class="text-xs text-slate-500">Sin registro de asistencia para ${formatearFechaCompleta(estado.fechaAuditoria)}.</p>
+          </div>
+          <span class="rounded-full bg-red-500/15 px-2.5 py-1 text-xs font-medium text-red-400">No asistió</span>
+        </div>
+        <label class="mb-2 block text-xs font-medium uppercase tracking-wide text-slate-500">Nota por ausencia</label>
+        <textarea id="auditoria-nota-ausencia" rows="3" class="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-200 focus:border-blue-500 focus:outline-none">${notaActual}</textarea>
+        <div class="mt-3 flex justify-end">
+          <button type="button" id="btn-auditoria-ausencia" class="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500 transition-colors">Guardar nota de ausencia</button>
+        </div>
+      </div>`;
+
+    document.getElementById('btn-auditoria-ausencia')?.addEventListener('click', async () => {
+      const textarea = document.getElementById('auditoria-nota-ausencia');
+      const nota = textarea?.value.trim() || 'No llegó a trabajar.';
+      const ausenciaExistente = estado.asistencias.find(
+        (a) => a.fecha === estado.fechaAuditoria && a.correo === estado.correoAuditoria && a.ausencia
+      );
+
+      const entradaAusencia = {
+        correo: estado.correoAuditoria,
+        nombre: empleadoSeleccionado.nombre,
+        apellido: empleadoSeleccionado.apellido,
+        sitioCurso: 'No asistió',
+        fecha: estado.fechaAuditoria,
+        hora: '',
+        geolocalizacion: '',
+        nota,
+        ausencia: true,
+        epp: null,
+        equipo: null
+      };
+
+      try {
+        if (estado.usandoDatosDemo) {
+          if (ausenciaExistente) {
+            Object.assign(ausenciaExistente, entradaAusencia);
+          } else {
+            entradaAusencia.id = `demo-ausencia-${Date.now()}`;
+            estado.asistencias.push(entradaAusencia);
+          }
+          estado.asistencias = ordenarPorFechaHoraDesc(estado.asistencias);
+          guardarDatosLocales();
+        } else {
+          if (ausenciaExistente) {
+            await guardarAsistencia({ ...ausenciaExistente, ...entradaAusencia }, ausenciaExistente.id);
+          } else {
+            await guardarAsistencia(entradaAusencia);
+          }
+        }
+        mostrarToast('Nota de ausencia guardada.', 'exito');
+        renderizarAuditoria();
+      } catch (err) {
+        console.error(err);
+        mostrarToast('No se pudo guardar la nota de ausencia.', 'error');
+      }
+    });
+    return;
+  }
+
   if (registros.length === 0) {
     contenedor.innerHTML = `<div class="py-10 text-center text-slate-500">No hay registros para los filtros seleccionados.</div>`;
     return;
@@ -1079,9 +1159,119 @@ function renderizarAuditoria() {
             )}</div>
           </div>
         </div>
+        <div class="mt-4 rounded-lg border border-slate-700 bg-slate-800/40 p-3">
+          <label class="mb-2 block text-xs font-medium uppercase tracking-wide text-slate-500">Nota de justificación</label>
+          <textarea data-nota-input="${a.id || ''}" rows="2" class="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-200 focus:border-blue-500 focus:outline-none">${a.nota || ''}</textarea>
+          <div class="mt-2 flex justify-end gap-2">
+            <button type="button" data-nota-clear="${a.id || ''}" class="rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-300 hover:bg-slate-700 transition-colors">Quitar nota</button>
+            <button type="button" data-nota-btn="${a.id || ''}" class="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500 transition-colors">Guardar nota</button>
+          </div>
+        </div>
       </div>`;
     })
     .join('');
+
+  contenedor.querySelectorAll('[data-nota-btn]').forEach((boton) => {
+    boton.addEventListener('click', async () => {
+      const id = boton.dataset.notaBtn;
+      const textarea = contenedor.querySelector(`[data-nota-input="${id}"]`);
+      if (!id || !textarea) return;
+
+      const nota = textarea.value.trim();
+      const asistencia = estado.asistencias.find((item) => item.id === id);
+      if (!asistencia) return;
+
+      const actualizada = { ...asistencia, nota };
+      try {
+        if (estado.usandoDatosDemo) {
+          Object.assign(asistencia, actualizada);
+          guardarDatosLocales();
+        } else {
+          await guardarAsistencia(actualizada, id);
+        }
+        mostrarToast(nota ? 'Nota guardada correctamente.' : 'Nota eliminada correctamente.', 'exito');
+        renderizarAuditoria();
+      } catch (err) {
+        console.error(err);
+        mostrarToast('No se pudo guardar la nota.', 'error');
+      }
+    });
+  });
+
+  contenedor.querySelectorAll('[data-nota-clear]').forEach((boton) => {
+    boton.addEventListener('click', () => {
+      const id = boton.dataset.notaClear;
+      const textarea = contenedor.querySelector(`[data-nota-input="${id}"]`);
+      if (!id || !textarea) return;
+
+      const asistencia = estado.asistencias.find((item) => item.id === id);
+      if (!asistencia) return;
+
+      mostrarConfirmacion('¿Deseas quitar esta nota de justificación guardada?', async () => {
+        const actualizada = { ...asistencia, nota: '' };
+        try {
+          if (estado.usandoDatosDemo) {
+            Object.assign(asistencia, actualizada);
+            guardarDatosLocales();
+          } else {
+            await guardarAsistencia(actualizada, id);
+          }
+          textarea.value = '';
+          mostrarToast('Nota eliminada correctamente.', 'exito');
+          renderizarAuditoria();
+        } catch (err) {
+          console.error(err);
+          mostrarToast('No se pudo eliminar la nota.', 'error');
+        }
+      });
+    });
+  });
+}
+
+function configurarConfirmacion() {
+  const modal = document.getElementById('confirm-modal');
+  if (!modal) return;
+
+  document.getElementById('confirm-cancel')?.addEventListener('click', ocultarConfirmacion);
+  document.getElementById('confirm-accept')?.addEventListener('click', () => {
+    const accion = modal.dataset.accion;
+    ocultarConfirmacion();
+    if (accion && typeof window[accion] === 'function') {
+      window[accion]();
+    }
+  });
+  modal.addEventListener('click', (event) => {
+    if (event.target === modal) ocultarConfirmacion();
+  });
+}
+
+let confirmacionCallback = null;
+
+function mostrarConfirmacion(mensaje, callback) {
+  const modal = document.getElementById('confirm-modal');
+  const texto = document.getElementById('confirm-modal-text');
+  if (!modal || !texto) {
+    if (window.confirm(mensaje)) callback();
+    return;
+  }
+
+  texto.textContent = mensaje;
+  confirmacionCallback = callback;
+  document.getElementById('confirm-accept')?.addEventListener('click', () => {
+    if (typeof confirmacionCallback === 'function') {
+      confirmacionCallback();
+    }
+  }, { once: true });
+  modal.classList.remove('hidden');
+  modal.classList.add('flex');
+}
+
+function ocultarConfirmacion() {
+  const modal = document.getElementById('confirm-modal');
+  if (!modal) return;
+  modal.classList.add('hidden');
+  modal.classList.remove('flex');
+  confirmacionCallback = null;
 }
 
 // ----------------------------------------------------------------------------
