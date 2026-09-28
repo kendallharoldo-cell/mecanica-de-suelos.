@@ -550,7 +550,7 @@ function configurarFormularioRegistro() {
       }
       mostrarToast('Asistencia guardada correctamente.', 'exito');
       document.getElementById('form-registro').reset();
-      document.getElementById('registro-fecha').value = hoyISO();
+      document.getElementById('registro-fecha').value = nuevaAsistencia.fecha || hoyISO();
       document.getElementById('registro-hora').value = new Date().toTimeString().slice(0, 8);
       document.getElementById('registro-nombre-preview').textContent = '';
       renderizarVistaActual();
@@ -1298,4 +1298,5 @@ function mostrarToast(mensaje, tipo = 'exito') {
 // ARRANQUE
 // ----------------------------------------------------------------------------
 document.addEventListener('DOMContentLoaded', iniciar);
+
 
