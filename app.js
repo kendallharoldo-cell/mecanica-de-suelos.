@@ -970,13 +970,13 @@ function renderizarHistorialEmpleado() {
   vacio.classList.add('hidden');
 
   const emp = estado.empleados.find((e) => e.correo === estado.correoEmpleadoHistorial);
-  const asistenciasEmpleado = estado.asistencias.filter((a) => {
+  const registrosHistorial = estado.asistencias.filter((a) => {
     if (a.correo !== estado.correoEmpleadoHistorial) return false;
-    if (a.ausencia) return false;
     if (estado.fechaInicioHistorial && a.fecha < estado.fechaInicioHistorial) return false;
     if (estado.fechaFinHistorial && a.fecha > estado.fechaFinHistorial) return false;
     return true;
   });
+  const asistenciasEmpleado = registrosHistorial.filter((a) => !a.ausencia);
   const metricas = calcularMetricasEmpleado(asistenciasEmpleado);
 
   document.getElementById('historial-nombre').textContent = `${emp.nombre} ${emp.apellido}`;
@@ -988,26 +988,26 @@ function renderizarHistorialEmpleado() {
   document.getElementById('historial-cumplimiento').textContent = `${metricas.cumplimientoPromedio}%`;
 
   const tbody = document.getElementById('tabla-historial');
-  if (asistenciasEmpleado.length === 0) {
+  if (registrosHistorial.length === 0) {
     tbody.innerHTML = `<tr><td colspan="6" class="py-6 text-center text-slate-500">Sin registros de asistencia.</td></tr>`;
     return;
   }
-  tbody.innerHTML = asistenciasEmpleado
+  tbody.innerHTML = registrosHistorial
     .map(
       (a) => `
-      <tr class="border-b border-slate-800 hover:bg-slate-800/40">
+      <tr class="border-b border-slate-800 hover:bg-slate-800/40 ${a.ausencia ? 'bg-red-500/5' : ''}">
         <td class="py-3 px-4 text-slate-300">${formatearFechaCompleta(a.fecha)}</td>
-        <td class="py-3 px-4 ${clasesHora(a.hora)}">${a.hora || '—'}</td>
-        <td class="py-3 px-4 text-slate-400">${a.sitioCurso || '—'}</td>
+        <td class="py-3 px-4 ${a.ausencia ? 'text-red-400 font-medium' : clasesHora(a.hora)}">${a.ausencia ? 'FALTÓ' : a.hora || '—'}</td>
+        <td class="py-3 px-4 text-slate-400">${a.ausencia ? 'No asistió' : a.sitioCurso || '—'}</td>
         <td class="py-3 px-4 text-slate-500 text-xs">${construirEnlaceGoogleMaps(a.geolocalizacion, '—')}</td>
         <td class="py-3 px-4">
-          <span class="rounded-full px-2.5 py-1 text-xs font-medium ${
+          ${a.ausencia ? '—' : `<span class="rounded-full px-2.5 py-1 text-xs font-medium ${
             calcularCumplimientoEppIndividual(a.epp) >= 80
               ? 'bg-emerald-500/15 text-emerald-400'
               : calcularCumplimientoEppIndividual(a.epp) >= 50
               ? 'bg-amber-500/15 text-amber-400'
               : 'bg-red-500/15 text-red-400'
-          }">${calcularCumplimientoEppIndividual(a.epp)}%</span>
+          }">${calcularCumplimientoEppIndividual(a.epp)}%</span>`}
         </td>
         <td class="py-3 px-4 text-slate-400 text-xs">${a.nota ? a.nota : '—'}</td>
       </tr>`
