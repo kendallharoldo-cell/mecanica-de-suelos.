@@ -612,7 +612,7 @@ function configurarFormularioImportacion() {
         registros.forEach((registro) => {
           const existente = existentes.get(claveAsistencia(registro));
           if (existente) {
-            Object.assign(existente, registro, { id: existente.id });
+            Object.assign(existente, combinarNotaImportada(registro, existente), { id: existente.id });
             actualizados++;
             return;
           }
@@ -633,7 +633,7 @@ function configurarFormularioImportacion() {
         registros.forEach((registro) => {
           const existente = existentes.get(claveAsistencia(registro));
           if (existente) {
-            actualizaciones.push(guardarAsistencia(registro, existente.id));
+            actualizaciones.push(guardarAsistencia(combinarNotaImportada(registro, existente), existente.id));
           } else {
             nuevosRegistros.push(registro);
           }
@@ -658,6 +658,11 @@ function configurarFormularioImportacion() {
 
 function claveAsistencia(asistencia) {
   return `${asistencia.correo}|${asistencia.fecha}|${asistencia.hora}`;
+}
+
+function combinarNotaImportada(registro, existente) {
+  const notaImportada = String(registro.nota || '').trim();
+  return { ...registro, nota: notaImportada || existente.nota || '' };
 }
 
 async function agregarEmpleadosEnFirebase(registros) {
@@ -1298,5 +1303,4 @@ function mostrarToast(mensaje, tipo = 'exito') {
 // ARRANQUE
 // ----------------------------------------------------------------------------
 document.addEventListener('DOMContentLoaded', iniciar);
-
 
