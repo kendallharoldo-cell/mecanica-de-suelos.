@@ -1273,9 +1273,12 @@ function configurarConfirmacion() {
 
   document.getElementById('confirm-cancel')?.addEventListener('click', ocultarConfirmacion);
   document.getElementById('confirm-accept')?.addEventListener('click', () => {
+    const callback = confirmacionCallback;
     const accion = modal.dataset.accion;
     ocultarConfirmacion();
-    if (accion && typeof window[accion] === 'function') {
+    if (typeof callback === 'function') {
+      callback();
+    } else if (accion && typeof window[accion] === 'function') {
       window[accion]();
     }
   });
@@ -1296,11 +1299,6 @@ function mostrarConfirmacion(mensaje, callback) {
 
   texto.textContent = mensaje;
   confirmacionCallback = callback;
-  document.getElementById('confirm-accept')?.addEventListener('click', () => {
-    if (typeof confirmacionCallback === 'function') {
-      confirmacionCallback();
-    }
-  }, { once: true });
   modal.classList.remove('hidden');
   modal.classList.add('flex');
 }
