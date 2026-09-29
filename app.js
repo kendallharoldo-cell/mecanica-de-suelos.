@@ -8,6 +8,7 @@ import {
   obtenerAsistencias,
   obtenerAsistenciasPorFecha,
   guardarAsistencia,
+  eliminarAsistencia,
   guardarEmpleado,
   importarAsistenciasMasivo,
   eliminarTodosLosDatos,
@@ -1038,6 +1039,27 @@ function configurarAuditoria() {
   });
 }
 
+function eliminarRegistroAuditoria(id) {
+  if (!id) return;
+
+  mostrarConfirmacion('¿Deseas eliminar este registro de asistencia? Esta acción no se puede deshacer.', async () => {
+    try {
+      if (estado.usandoDatosDemo) {
+        estado.asistencias = estado.asistencias.filter((asistencia) => asistencia.id !== id);
+        guardarDatosLocales();
+      } else {
+        await eliminarAsistencia(id);
+        estado.asistencias = estado.asistencias.filter((asistencia) => asistencia.id !== id);
+      }
+      mostrarToast('Registro eliminado correctamente.', 'exito');
+      renderizarAuditoria();
+    } catch (err) {
+      console.error(err);
+      mostrarToast('No se pudo eliminar el registro.', 'error');
+    }
+  });
+}
+
 function renderizarAuditoria() {
   let registros = estado.asistencias.filter((a) => a.fecha === estado.fechaAuditoria && !a.ausencia);
   if (estado.correoAuditoria) {
@@ -1069,7 +1091,12 @@ function renderizarAuditoria() {
         <div class="mt-3 flex justify-end">
           <button type="button" id="btn-auditoria-ausencia" class="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500 transition-colors">Guardar nota de ausencia</button>
         </div>
+        ${ausencia?.id ? `<div class="mt-2 flex justify-end"><button type="button" data-auditoria-delete="${ausencia.id}" class="rounded-lg border border-red-500/40 px-3 py-2 text-xs font-semibold text-red-400 hover:bg-red-500/10 transition-colors">Eliminar registro</button></div>` : ''}
       </div>`;
+
+    contenedor.querySelector('[data-auditoria-delete]')?.addEventListener('click', (e) => {
+      eliminarRegistroAuditoria(e.currentTarget.dataset.auditoriaDelete);
+    });
 
     document.getElementById('btn-auditoria-ausencia')?.addEventListener('click', async () => {
       const textarea = document.getElementById('auditoria-nota-ausencia');
@@ -1148,7 +1175,10 @@ function renderizarAuditoria() {
             <h4 class="font-semibold text-slate-100">${a.nombre} ${a.apellido}</h4>
             <p class="text-xs text-slate-500">${a.correo} · ${a.sitioCurso || 'Sin sitio'} · ${a.hora || '—'}</p>
           </div>
-          <span class="text-xs text-slate-500">${construirEnlaceGoogleMaps(a.geolocalizacion)}</span>
+          <div class="flex items-center gap-3">
+            <span class="text-xs text-slate-500">${construirEnlaceGoogleMaps(a.geolocalizacion)}</span>
+            ${a.id ? `<button type="button" data-auditoria-delete="${a.id}" class="rounded-lg border border-red-500/40 px-3 py-2 text-xs font-semibold text-red-400 hover:bg-red-500/10 transition-colors">Eliminar registro</button>` : ''}
+          </div>
         </div>
         <div class="grid gap-4 md:grid-cols-2">
           <div>
@@ -1175,6 +1205,10 @@ function renderizarAuditoria() {
       </div>`;
     })
     .join('');
+
+  contenedor.querySelectorAll('[data-auditoria-delete]').forEach((boton) => {
+    boton.addEventListener('click', () => eliminarRegistroAuditoria(boton.dataset.auditoriaDelete));
+  });
 
   contenedor.querySelectorAll('[data-nota-btn]').forEach((boton) => {
     boton.addEventListener('click', async () => {
