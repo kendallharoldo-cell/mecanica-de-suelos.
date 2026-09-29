@@ -11,7 +11,11 @@ const ITEMS_EPP = Object.keys(EPP_LABELS);
 // UTILIDADES DE FECHA
 // ----------------------------------------------------------------------------
 export function hoyISO() {
-  return new Date().toISOString().slice(0, 10);
+  const fecha = new Date();
+  const anio = fecha.getFullYear();
+  const mes = String(fecha.getMonth() + 1).padStart(2, '0');
+  const dia = String(fecha.getDate()).padStart(2, '0');
+  return `${anio}-${mes}-${dia}`;
 }
 
 export function sumarDias(fechaISO, dias) {
