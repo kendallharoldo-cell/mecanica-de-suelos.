@@ -82,13 +82,6 @@ export function crearEquipoVacio() {
     carreta: false,
     pala: false,
     tonel: false,
-    masos: false,
-    probetas: false,
-    tamices: false,
-    speedy: false,
-    estufaGas: false,
-    arenaCalibrada: false,
-    balanzas: false,
     masoCompactadorGrande: false,
     masoCompactadorPequeno: false,
     moldeCompactacionGrande: false,
@@ -99,14 +92,17 @@ export function crearEquipoVacio() {
     cucharonProctor: false,
     espatulaProctor: false,
     brochaProctor: false,
+    conoPrecaucion: false,
     cintaMetrica: false,
     brochaDensidad: false,
     cajonMadera: false,
     cajonPlastico: false,
     tamizUnaPulgadaYMedia: false,
     tamizTresCuartosPulgada: false,
+    speedy: false,
     vidrioHumedad: false,
     estufaGasButano: false,
+    arenaCalibrada: false,
     tarros: false,
     palanganas: false,
     clavos: false,
@@ -138,42 +134,38 @@ export const EPP_LABELS = {
 };
 
 export const EQUIPO_LABELS = {
-  moldesCilindros: 'Moldes de Cilindros',
+  moldesCilindros: 'Moldes de Muestreo - Cilindros',
   termometro: 'Termómetro',
-  conoAsentamiento: 'Cono Precaución',
+  conoAsentamiento: 'Cono Asentamiento',
   varilla: 'Varilla',
-  planchaAsentamiento: 'Plancha de Asentamiento',
+  planchaAsentamiento: 'Plancha para Asentamiento',
   barraRasadora: 'Barra Rasadora',
   cubetas: 'Cubetas',
   cucharon: 'Cucharón',
   carreta: 'Carreta',
   pala: 'Pala',
   tonel: 'Tonel',
-  masos: 'Mazos',
-  probetas: 'Probetas',
-  tamices: 'Tamices',
-  speedy: 'Speedy',
-  estufaGas: 'Estufa de Gas',
-  arenaCalibrada: 'Arena Calibrada',
-  balanzas: 'Balanzas',
-  masoCompactadorGrande: 'Maso Compactador Grande',
-  masoCompactadorPequeno: 'Maso Compactador Pequeño',
-  moldeCompactacionGrande: 'Molde Compactación Grande',
-  moldeCompactacionPequeno: 'Molde Compactación Pequeño',
-  bandejaProctor: 'Bandeja Proctor',
-  rasadoraProctor: 'Rasadora Proctor',
-  probetaProctor: 'Probeta Proctor',
-  cucharonProctor: 'Cucharón Proctor',
-  espatulaProctor: 'Espátula Proctor',
-  brochaProctor: 'Brocha Proctor',
+  masoCompactadorGrande: 'Maso Compactacion Standar proc',
+  masoCompactadorPequeno: 'Maso Compactacion Modificado proc',
+  moldeCompactacionGrande: 'Molde compactacion 4plg proc',
+  moldeCompactacionPequeno: 'Molde compactacion 6 plg proc',
+  bandejaProctor: 'Bandeja proc',
+  rasadoraProctor: 'Rasadora proc',
+  probetaProctor: 'Probeta proc',
+  cucharonProctor: 'Cucharon proc',
+  espatulaProctor: 'Espatula proc',
+  brochaProctor: 'Brocha proc',
+  conoPrecaucion: 'Cono precaucion',
   cintaMetrica: 'Cinta Métrica',
-  brochaDensidad: 'Brocha Densidad',
+  brochaDensidad: 'Brocha densidad',
   cajonMadera: 'Cajón Madera',
   cajonPlastico: 'Cajón Plástico',
-  tamizUnaPulgadaYMedia: 'Tamiz 1 1/2 plg',
+  tamizUnaPulgadaYMedia: 'Tamiz 1 1/2 plg.',
   tamizTresCuartosPulgada: 'Tamiz 3/4 plg',
-  vidrioHumedad: 'Vidrio Humedad',
-  estufaGasButano: 'Estufa Gas Butano',
+  vidrioHumedad: 'Vidrio Humedades',
+  estufaGasButano: 'Estufa gas butano',
+  speedy: 'Speedy',
+  arenaCalibrada: 'Arena Calibrada',
   tarros: 'Tarros',
   palanganas: 'Palanganas',
   clavos: 'Clavos',
@@ -182,11 +174,11 @@ export const EQUIPO_LABELS = {
   martillo: 'Martillo',
   embudoSeisPulgadas: 'Embudo 6 plg',
   embudoCuatroPulgadas: 'Embudo 4 plg',
-  picnometro: 'Picnómetro',
-  platoPerforadoGrande: 'Plato Perforado Grande',
-  platoPerforadoPequeno: 'Plato Perforado Pequeño',
-  balanzaDigitalGrande: 'Balanza Digital Grande',
+  picnometro: 'Picnometro plastico',
+  platoPerforadoGrande: 'Plato Perforado 6 pulg',
+  platoPerforadoPequeno: 'Plato Perforado 4 pulg',
   balanzaDigitalPequena: 'Balanza Digital Pequeña',
+  balanzaDigitalGrande: 'Balanza Digital Grande',
   gasButano: 'Gas Butano'
 };
 
@@ -266,9 +258,10 @@ export async function eliminarAsistencia(id) {
   await deleteDoc(doc(db, ASISTENCIAS_COL, id));
 }
 
-export async function importarAsistenciasMasivo(registros) {
+export async function importarAsistenciasMasivo(registros, alAvanzar = () => {}) {
   const CHUNK = 400; // límite de 500 operaciones por batch en Firestore
   let importados = 0;
+  alAvanzar(0, registros.length);
   for (let i = 0; i < registros.length; i += CHUNK) {
     const lote = registros.slice(i, i + CHUNK);
     const batch = writeBatch(db);
@@ -278,6 +271,7 @@ export async function importarAsistenciasMasivo(registros) {
     });
     await batch.commit();
     importados += lote.length;
+    alAvanzar(importados, registros.length);
   }
   return importados;
 }
@@ -328,4 +322,5 @@ export function sincronizarRealtime(callbackEmpleados, callbackAsistencias) {
     unsubAsistencias();
   };
 }
+
 
