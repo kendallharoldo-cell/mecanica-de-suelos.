@@ -51,6 +51,8 @@ const estado = {
   correoEmpleadoHistorial: null,
   fechaInicioHistorial: '',
   fechaFinHistorial: '',
+  objetivoJornada: { horasDiarias: 8, diasLaborales: 5 },
+  filtroEmpleadosGrafica: null,
   correoAuditoria: null,
   fechaAuditoria: hoyISO(),
   cargando: true,
@@ -60,7 +62,7 @@ const estado = {
 const MODO_PRUEBA_LOCAL = false;
 const CLAVE_DATOS_LOCALES = 'mecanica-suelos-datos';
 
-let charts = { tendencia: null, eppItems: null, distribucionSitio: null };
+let charts = { tendencia: null, horasTrabajadas: null, porcentajeHorasEmpleado: null, eppItems: null, distribucionSitio: null };
 
 function cargarDatosLocales() {
   try {
@@ -146,6 +148,8 @@ async function iniciar() {
   configurarAuditoria();
   configurarConfirmacion();
   configurarFiltroPeriodo();
+  configurarFiltroEmpleadosGrafica();
+  configurarObjetivoJornada();
 
   if (MODO_PRUEBA_LOCAL) {
     const datosLocales = cargarDatosLocales();
@@ -333,9 +337,198 @@ function renderizarDashboard() {
   document.getElementById('kpi-sitio-top').textContent = sitioTop.sitio;
   document.getElementById('kpi-sitio-top-detalle').textContent = `${sitioTop.total} marcas registradas`;
 
+  renderizarResumenHorasDashboard();
+
   renderizarGraficaTendencia(asistenciasFiltradas, inicio, fin);
+  renderizarGraficaHorasTrabajadas(asistenciasFiltradas, inicio, fin);
+  renderizarGraficaPorcentajeHorasEmpleado(asistenciasFiltradas, inicio, fin);
   renderizarGraficaEppItems(asistenciasFiltradas);
   renderizarGraficaDistribucionSitio(asistenciasFiltradas);
+}
+
+function configurarObjetivoJornada() {
+  try {
+    const guardado = JSON.parse(localStorage.getItem('asistencia-objetivo-jornada'));
+    if (guardado) {
+      estado.objetivoJornada.horasDiarias = Number(guardado.horasDiarias) || 8;
+      estado.objetivoJornada.diasLaborales = Number(guardado.diasLaborales) || 5;
+    }
+  } catch (err) {
+    console.warn('No se pudo leer el objetivo de jornada guardado:', err);
+  }
+
+  const horasInput = document.getElementById('objetivo-horas-diarias');
+  const diasInput = document.getElementById('objetivo-dias-semana');
+  if (horasInput) horasInput.value = estado.objetivoJornada.horasDiarias;
+  if (diasInput) diasInput.value = estado.objetivoJornada.diasLaborales;
+
+  const guardarObjetivo = () => {
+    estado.objetivoJornada.horasDiarias = Math.min(24, Math.max(1, Number(horasInput.value) || 8));
+    estado.objetivoJornada.diasLaborales = Math.min(7, Math.max(1, Number(diasInput.value) || 5));
+    localStorage.setItem('asistencia-objetivo-jornada', JSON.stringify(estado.objetivoJornada));
+    renderizarDashboard();
+    if (estado.vistaActual === 'historial') renderizarHistorialEmpleado();
+  };
+  horasInput?.addEventListener('change', guardarObjetivo);
+  diasInput?.addEventListener('change', guardarObjetivo);
+}
+
+function fechaISOConDias(fechaISO, dias) {
+  const fecha = new Date(`${fechaISO}T00:00:00`);
+  fecha.setDate(fecha.getDate() + dias);
+  return fecha.toISOString().slice(0, 10);
+}
+
+function contarDiasLaborales(inicio, fin, diasLaborales) {
+  let total = 0;
+  for (let fecha = inicio; fecha <= fin; fecha = fechaISOConDias(fecha, 1)) {
+    const diaSemana = (new Date(`${fecha}T00:00:00`).getDay() + 6) % 7;
+    if (diaSemana < diasLaborales) total++;
+  }
+  return total;
+}
+
+function resumirHoras(asistencias) {
+  return asistencias.reduce((resumen, asistencia) => {
+    if (asistencia.ausencia) return resumen;
+    const horas = calcularResumenHoras(asistencia);
+    if (horas.total !== null) resumen.total += horas.total;
+    if (horas.ordinarias !== null) resumen.ordinarias += horas.ordinarias;
+    if (horas.extras !== null) resumen.extras += horas.extras;
+    return resumen;
+  }, { ordinarias: 0, extras: 0, total: 0 });
+}
+
+function renderizarResumenHorasDashboard() {
+  const contenedor = document.getElementById('resumen-horas-dashboard');
+  if (!contenedor) return;
+
+  const empleadosActivos = estado.empleados.filter((empleado) => empleado.estado !== 'Inactivo').length;
+  contenedor.innerHTML = obtenerPeriodosJornada().map((periodo) => {
+    const registros = estado.asistencias.filter((asistencia) =>
+      asistencia.fecha >= periodo.inicio && asistencia.fecha <= periodo.fin
+    );
+    return construirTarjetaResumenHoras(registros, periodo, empleadosActivos);
+  }).join('');
+}
+
+function renderizarResumenHorasEmpleado(asistenciasEmpleado) {
+  const contenedor = document.getElementById('historial-resumen-horas');
+  if (!contenedor) return;
+  contenedor.innerHTML = obtenerPeriodosJornada().map((periodo) => {
+    const registros = asistenciasEmpleado.filter((asistencia) =>
+      asistencia.fecha >= periodo.inicio && asistencia.fecha <= periodo.fin
+    );
+    return construirTarjetaResumenHoras(registros, periodo, 1);
+  }).join('');
+}
+
+function obtenerPeriodosJornada() {
+  const hoy = hoyISO();
+  const lunes = fechaISOConDias(hoy, -((new Date(`${hoy}T00:00:00`).getDay() + 6) % 7));
+  return [
+    { etiqueta: 'Hoy', inicio: hoy, fin: hoy },
+    { etiqueta: 'Esta semana', inicio: lunes, fin: hoy },
+    { etiqueta: 'Este mes', inicio: `${hoy.slice(0, 7)}-01`, fin: hoy }
+  ];
+}
+
+function construirTarjetaResumenHoras(registros, periodo, empleados) {
+  const resumen = resumirHoras(registros);
+  const { horasDiarias, diasLaborales } = estado.objetivoJornada;
+  const diasObjetivo = contarDiasLaborales(periodo.inicio, periodo.fin, diasLaborales);
+  const objetivo = horasDiarias * diasObjetivo * empleados;
+  const porcentaje = objetivo > 0 ? Math.round((resumen.ordinarias / objetivo) * 100) : 0;
+  const anchoBarra = Math.min(100, porcentaje);
+
+  return `<article class="rounded-lg border border-slate-700/70 bg-slate-950/40 p-4">
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <h4 class="text-sm font-semibold text-slate-100">${periodo.etiqueta}</h4>
+          <p class="mt-1 text-xs text-slate-500">${horasDiarias} h × ${diasObjetivo} días × ${empleados} ${empleados === 1 ? 'persona' : 'personas'}</p>
+        </div>
+        <p class="text-xl font-bold text-teal-400">${objetivo ? `${porcentaje}%` : '—'}</p>
+      </div>
+      <div class="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-800">
+        <div class="h-full rounded-full bg-teal-400" style="width:${anchoBarra}%"></div>
+      </div>
+      <dl class="mt-3 grid grid-cols-3 gap-2 text-xs">
+        <div><dt class="text-slate-500">Ordinarias</dt><dd class="mt-1 font-semibold text-slate-200">${formatearDuracion(resumen.ordinarias)}</dd></div>
+        <div><dt class="text-slate-500">Extras</dt><dd class="mt-1 font-semibold text-amber-400">${formatearDuracion(resumen.extras)}</dd></div>
+        <div><dt class="text-slate-500">Total</dt><dd class="mt-1 font-semibold text-slate-100">${formatearDuracion(resumen.total)}</dd></div>
+      </dl>
+      <p class="mt-2 text-[11px] text-slate-500">Cumplimiento de jornada ordinaria</p>
+    </article>`;
+}
+
+function calcularResumenHoras(asistencia) {
+  const jornada = asistencia.jornada || {};
+  const ordinarias = convertirDuracionHoras(jornada.horasOrdinarias) ?? calcularDuracionEntreMarcas(
+    asistencia.fecha,
+    asistencia.hora,
+    jornada.fechaSalida || asistencia.fecha,
+    jornada.horaSalida
+  );
+  const extrasCalculadas = calcularDuracionEntreMarcas(
+    jornada.fechaEntradaExtra || asistencia.fecha,
+    jornada.horaEntradaExtra,
+    jornada.fechaSalidaExtra || jornada.fechaEntradaExtra || asistencia.fecha,
+    jornada.horaSalidaExtra
+  );
+  const extras = convertirDuracionHoras(jornada.horasExtras) ?? extrasCalculadas ?? 0;
+  const totalInformado = convertirDuracionHoras(jornada.horasTotales);
+  const total = totalInformado ?? (ordinarias !== null || extrasCalculadas !== null || jornada.horasExtras != null
+    ? (ordinarias || 0) + extras
+    : null);
+  return { ordinarias, extras, total };
+}
+
+function calcularDuracionEntreMarcas(fechaInicio, horaInicio, fechaFin, horaFin) {
+  if (!fechaInicio || !horaInicio || !fechaFin || !horaFin) return null;
+  const inicio = new Date(`${fechaInicio}T${horaInicio}`);
+  let fin = new Date(`${fechaFin}T${horaFin}`);
+  if (Number.isNaN(inicio.getTime()) || Number.isNaN(fin.getTime())) return null;
+  if (fin < inicio) fin = new Date(fin.getTime() + 24 * 60 * 60 * 1000);
+  return (fin - inicio) / (60 * 60 * 1000);
+}
+
+function convertirDuracionHoras(valor) {
+  if (valor == null || valor === '') return null;
+  if (typeof valor === 'number') return valor >= 0 && valor < 1 ? valor * 24 : valor;
+  if (valor instanceof Date && !Number.isNaN(valor.getTime())) {
+    return valor.getHours() + valor.getMinutes() / 60 + valor.getSeconds() / 3600;
+  }
+  const texto = String(valor).trim();
+  const duracion = texto.match(/^(\d{1,3}):([0-5]?\d)(?::([0-5]?\d))?$/);
+  if (duracion) return Number(duracion[1]) + Number(duracion[2]) / 60 + Number(duracion[3] || 0) / 3600;
+  const decimal = Number(texto.replace(',', '.'));
+  return Number.isFinite(decimal) && decimal >= 0 ? decimal : null;
+}
+
+function formatearDuracion(horas) {
+  if (horas == null || !Number.isFinite(horas)) return '—';
+  const minutosTotales = Math.round(horas * 60);
+  return `${Math.floor(minutosTotales / 60)} h ${String(minutosTotales % 60).padStart(2, '0')} min`;
+}
+
+function renderizarResumenJornada(asistencia) {
+  const jornada = asistencia.jornada || {};
+  const resumen = calcularResumenHoras(asistencia);
+  const entrada = asistencia.hora || '—';
+  const salida = jornada.horaSalida || '—';
+  const entradaExtra = jornada.horaEntradaExtra;
+  const salidaExtra = jornada.horaSalidaExtra;
+
+  return `<div class="min-w-52 space-y-1.5 text-xs">
+    <p><span class="text-slate-500">Entrada:</span> <strong class="text-slate-200">${escaparHTML(entrada)}</strong>
+      <span class="ml-2 text-slate-500">Salida:</span> <strong class="text-slate-200">${escaparHTML(salida)}</strong></p>
+    ${jornada.estado ? `<p><span class="text-slate-500">Estado:</span> ${escaparHTML(jornada.estado)}</p>` : ''}
+    ${entradaExtra || salidaExtra ? `<p><span class="text-amber-400">Extra:</span> ${escaparHTML(jornada.fechaEntradaExtra || '')} ${escaparHTML(entradaExtra || '—')} a ${escaparHTML(jornada.fechaSalidaExtra || '')} ${escaparHTML(salidaExtra || '—')}</p>` : ''}
+    <p class="text-slate-400">Ordinarias ${formatearDuracion(resumen.ordinarias)} · Extras ${formatearDuracion(resumen.extras)}</p>
+    <p class="font-semibold text-teal-400">Total del día ${formatearDuracion(resumen.total)}</p>
+    ${jornada.geolocalizacionSalida ? `<p><span class="text-slate-500">Ubicación salida:</span> ${construirEnlaceGoogleMaps(jornada.geolocalizacionSalida, 'No disponible')}</p>` : ''}
+    ${jornada.geolocalizacionEntradaExtra || jornada.geolocalizacionSalidaExtra ? `<p><span class="text-slate-500">Ubicación extra:</span> ${construirEnlaceGoogleMaps(jornada.geolocalizacionEntradaExtra || jornada.geolocalizacionSalidaExtra, 'No disponible')}</p>` : ''}
+  </div>`;
 }
 
 function coloresPalette() {
@@ -361,18 +554,16 @@ function renderizarGraficaTendencia(asistencias, inicio, fin) {
     type: 'line',
     data: {
       labels: etiquetas,
-      datasets: [
-        {
-          label: 'Asistencias',
-          data: valores,
-          borderColor: c.azul,
-          backgroundColor: 'rgba(59, 130, 246, 0.15)',
-          fill: true,
-          tension: 0.35,
-          pointRadius: 3,
-          pointBackgroundColor: c.azul
-        }
-      ]
+      datasets: [{
+        label: 'Asistencias',
+        data: valores,
+        borderColor: c.azul,
+        backgroundColor: 'rgba(59, 130, 246, 0.15)',
+        fill: true,
+        tension: 0.35,
+        pointRadius: 3,
+        pointBackgroundColor: c.azul
+      }]
     },
     options: {
       responsive: true,
@@ -384,6 +575,223 @@ function renderizarGraficaTendencia(asistencias, inicio, fin) {
       }
     }
   });
+}
+
+function renderizarGraficaHorasTrabajadas(asistencias, inicio, fin) {
+  const { etiquetas } = calcularTendenciaDiaria(asistencias, inicio, fin);
+  const horasPorDia = calcularHorasPorDia(asistencias, inicio, fin);
+  const c = coloresPalette();
+  const ctx = document.getElementById('grafica-horas-trabajadas').getContext('2d');
+
+  if (charts.horasTrabajadas) charts.horasTrabajadas.destroy();
+  charts.horasTrabajadas = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: etiquetas,
+      datasets: [{
+        label: 'Horas trabajadas',
+        data: horasPorDia,
+        borderColor: c.cian,
+        backgroundColor: 'rgba(6, 182, 212, 0.16)',
+        fill: true,
+        tension: 0.35,
+        pointRadius: 3,
+        pointBackgroundColor: c.cian
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: (context) => `Horas trabajadas: ${formatearDuracion(context.raw)}` } }
+      },
+      scales: {
+        x: { grid: { color: c.grid }, ticks: { color: c.texto } },
+        y: {
+          title: { display: true, text: 'Horas', color: c.texto },
+          grid: { color: c.grid },
+          ticks: { color: c.texto, callback: (valor) => `${valor} h` },
+          beginAtZero: true
+        }
+      }
+    }
+  });
+}
+
+function calcularHorasPorDia(asistencias, inicio, fin) {
+  const horasPorDia = new Map();
+  for (let fecha = inicio; fecha <= fin; fecha = fechaISOConDias(fecha, 1)) {
+    horasPorDia.set(fecha, 0);
+  }
+  asistencias.forEach((asistencia) => {
+    const total = calcularResumenHoras(asistencia).total;
+    if (total !== null) horasPorDia.set(asistencia.fecha, (horasPorDia.get(asistencia.fecha) || 0) + total);
+  });
+  return [...horasPorDia.values()];
+}
+
+function renderizarGraficaPorcentajeHorasEmpleado(asistencias, inicio, fin) {
+  const empleadosGrafica = [...estado.empleados]
+    .filter((empleado) => estado.filtroEmpleadosGrafica === null || estado.filtroEmpleadosGrafica.has(empleado.correo))
+    .sort((a, b) => `${a.nombre} ${a.apellido}`.localeCompare(`${b.nombre} ${b.apellido}`));
+  const diasObjetivo = contarDiasLaborales(inicio, fin, estado.objetivoJornada.diasLaborales);
+  const horasObjetivo = estado.objetivoJornada.horasDiarias * diasObjetivo;
+  const metricas = empleadosGrafica.map((empleado) => {
+    const registros = asistencias.filter((asistencia) => asistencia.correo === empleado.correo);
+    const resumen = resumirHoras(registros);
+    return {
+      nombre: `${empleado.nombre} ${empleado.apellido}`,
+      ...resumen,
+      objetivo: horasObjetivo,
+      porcentaje: horasObjetivo > 0 ? Math.round((resumen.ordinarias / horasObjetivo) * 100) : 0
+    };
+  });
+  const maximoPorcentaje = Math.max(100, ...metricas.map((metrica) => metrica.porcentaje));
+  const maximoEje = Math.ceil((maximoPorcentaje + 15) / 20) * 20;
+  const c = coloresPalette();
+  const canvas = document.getElementById('grafica-porcentaje-horas-empleado');
+  const contenedorGrafica = canvas.parentElement;
+  const mensajeVacio = document.getElementById('grafica-empleados-vacia');
+  if (charts.porcentajeHorasEmpleado) charts.porcentajeHorasEmpleado.destroy();
+  charts.porcentajeHorasEmpleado = null;
+  if (metricas.length === 0) {
+    contenedorGrafica.classList.add('hidden');
+    mensajeVacio?.classList.remove('hidden');
+    return;
+  }
+  contenedorGrafica.classList.remove('hidden');
+  mensajeVacio?.classList.add('hidden');
+  contenedorGrafica.style.height = `${Math.max(384, metricas.length * 38 + 80)}px`;
+  const ctx = canvas.getContext('2d');
+
+  charts.porcentajeHorasEmpleado = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: metricas.map((metrica) => metrica.nombre),
+      datasets: [{
+        label: 'Cumplimiento de jornada',
+        data: metricas.map((metrica) => metrica.porcentaje),
+        backgroundColor: metricas.map((metrica) =>
+          metrica.porcentaje >= 100 ? 'rgba(57, 214, 194, 0.7)' : metrica.porcentaje >= 75 ? 'rgba(245, 184, 75, 0.7)' : 'rgba(242, 124, 140, 0.7)'
+        ),
+        borderRadius: 3,
+        barPercentage: 0.72,
+        categoryPercentage: 0.82
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (context) => {
+              const metrica = metricas[context.dataIndex];
+              return [
+                `Cumplimiento: ${metrica.porcentaje}%`,
+                `Ordinarias: ${formatearDuracion(metrica.ordinarias)}`,
+                `Horas extras: ${formatearDuracion(metrica.extras)}`,
+                `Total trabajado: ${formatearDuracion(metrica.total)}`,
+                `Objetivo del período: ${formatearDuracion(metrica.objetivo)}`
+              ];
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          beginAtZero: true,
+          max: maximoEje,
+          title: { display: true, text: '% de jornada ordinaria', color: c.texto },
+          grid: { color: c.grid },
+          ticks: { color: c.texto, callback: (valor) => `${valor}%` }
+        },
+        y: { grid: { display: false }, ticks: { color: c.texto, autoSkip: false } }
+      }
+    },
+    plugins: [{
+      id: 'etiquetas-porcentaje-horas',
+      afterDatasetsDraw(chart) {
+        const { ctx: contexto } = chart;
+        const meta = chart.getDatasetMeta(0);
+        contexto.save();
+        contexto.fillStyle = '#e7edf6';
+        contexto.font = '12px Manrope, sans-serif';
+        contexto.textBaseline = 'middle';
+        meta.data.forEach((barra, indice) => {
+          contexto.fillText(`${metricas[indice].porcentaje}%`, barra.x + 6, barra.y);
+        });
+        contexto.restore();
+      }
+    }]
+  });
+}
+
+function configurarFiltroEmpleadosGrafica() {
+  const filtro = document.getElementById('filtro-empleados-grafica');
+  if (!filtro) return;
+
+  filtro.querySelector('[data-seleccionar-todos]')?.addEventListener('click', () => {
+    estado.filtroEmpleadosGrafica = null;
+    actualizarFiltroEmpleadosGrafica();
+  });
+  filtro.querySelector('[data-limpiar-seleccion]')?.addEventListener('click', () => {
+    estado.filtroEmpleadosGrafica = new Set();
+    actualizarFiltroEmpleadosGrafica();
+  });
+  filtro.querySelector('#lista-empleados-grafica')?.addEventListener('change', (event) => {
+    const casilla = event.target.closest('[data-grafica-empleado]');
+    if (!casilla) return;
+    if (estado.filtroEmpleadosGrafica === null) {
+      estado.filtroEmpleadosGrafica = new Set(estado.empleados.map((empleado) => empleado.correo));
+    }
+    if (casilla.checked) estado.filtroEmpleadosGrafica.add(casilla.value);
+    else estado.filtroEmpleadosGrafica.delete(casilla.value);
+    actualizarFiltroEmpleadosGrafica();
+  });
+}
+
+function actualizarFiltroEmpleadosGrafica() {
+  poblarFiltroEmpleadosGrafica();
+  const { inicio, fin } = rangoPorPeriodo(
+    estado.filtroPeriodo,
+    estado.filtroInicioPersonalizado,
+    estado.filtroFinPersonalizado
+  );
+  const asistencias = estado.asistencias.filter((asistencia) =>
+    asistencia.fecha >= inicio && asistencia.fecha <= fin
+  );
+  renderizarGraficaPorcentajeHorasEmpleado(asistencias, inicio, fin);
+}
+
+function poblarFiltroEmpleadosGrafica() {
+  const lista = document.getElementById('lista-empleados-grafica');
+  const resumen = document.getElementById('resumen-filtro-empleados');
+  if (!lista || !resumen) return;
+
+  const empleados = [...estado.empleados].sort((a, b) =>
+    `${a.nombre} ${a.apellido}`.localeCompare(`${b.nombre} ${b.apellido}`)
+  );
+  if (estado.filtroEmpleadosGrafica instanceof Set) {
+    const correosValidos = new Set(empleados.map((empleado) => empleado.correo));
+    estado.filtroEmpleadosGrafica = new Set(
+      [...estado.filtroEmpleadosGrafica].filter((correo) => correosValidos.has(correo))
+    );
+  }
+  lista.innerHTML = empleados.map((empleado) => `
+    <label class="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-slate-300 hover:bg-slate-800">
+      <input type="checkbox" data-grafica-empleado value="${escaparHTML(empleado.correo)}"
+        ${estado.filtroEmpleadosGrafica === null || estado.filtroEmpleadosGrafica.has(empleado.correo) ? 'checked' : ''}
+        class="h-4 w-4 rounded border-slate-600 bg-slate-900 text-teal-500 focus:ring-teal-500" />
+      <span>${escaparHTML(`${empleado.nombre} ${empleado.apellido}`)}</span>
+    </label>`).join('');
+
+  resumen.textContent = estado.filtroEmpleadosGrafica === null
+    ? `Todos (${empleados.length})`
+    : `${estado.filtroEmpleadosGrafica.size} de ${empleados.length} seleccionados`;
 }
 
 function renderizarGraficaEppItems(asistencias) {
@@ -459,6 +867,8 @@ function poblarSelectoresEmpleado() {
   const selectAuditoria = document.getElementById('auditoria-empleado');
   if (selectAuditoria)
     selectAuditoria.innerHTML = `<option value="">Todos los empleados</option>${opciones}`;
+
+  poblarFiltroEmpleadosGrafica();
 }
 
 function construirChecklist(contenedorId, labels, prefijo) {
@@ -582,88 +992,226 @@ function configurarFormularioImportacion() {
   document.getElementById('input-importar')?.addEventListener('change', async (e) => {
     const archivo = e.target.files[0];
     if (!archivo) return;
-    const texto = await archivo.text();
     const estadoImport = document.getElementById('estado-importacion');
+    const progresoImport = document.getElementById('progreso-importacion');
+    progresoImport?.classList.remove('hidden');
+    document.getElementById('porcentaje-importacion')?.classList.remove('hidden');
+    document.getElementById('barra-progreso-importacion')?.parentElement.classList.remove('hidden');
+    estadoImport.textContent = 'Leyendo archivo...';
+    estadoImport.classList.remove('hidden', 'text-red-400', 'text-emerald-400');
+    estadoImport.classList.add('text-slate-400');
+    actualizarProgresoImportacion(0, 0, 'Preparando archivo...');
 
     try {
       let registros;
       const nombreArchivo = archivo.name.toLowerCase();
       if (nombreArchivo.endsWith('.xlsx') || nombreArchivo.endsWith('.xls')) {
-        if (!window.XLSX) throw new Error('No se pudo cargar el lector de archivos Excel.');
-        const libro = window.XLSX.read(await archivo.arrayBuffer(), { type: 'array', cellDates: true });
-        registros = libro.SheetNames.flatMap((nombreHoja) =>
-          window.XLSX.utils.sheet_to_json(libro.Sheets[nombreHoja], { defval: '' })
-        );
+        estadoImport.textContent = 'Procesando Excel en segundo plano...';
+        registros = await leerExcelEnSegundoPlano(archivo);
       } else if (nombreArchivo.endsWith('.json')) {
-        registros = JSON.parse(texto);
+        registros = JSON.parse(await archivo.text());
       } else {
-        registros = parsearCSV(texto);
+        registros = parsearCSV(await archivo.text());
       }
       if (!Array.isArray(registros) || registros.length === 0) {
         throw new Error('El archivo no contiene registros válidos.');
       }
 
+      const totalFilasArchivo = registros.length;
+      estadoImport.textContent = `Preparando ${totalFilasArchivo} filas...`;
       registros = registros.map(normalizarRegistroImportado);
+      const cambios = clasificarCambiosAsistencia(registros);
+      const registrosNuevos = cambios.nuevos;
+      const totalEscrituras = cambios.nuevos.length + cambios.actualizaciones.length;
+      const resumenCambios = `${cambios.nuevos.length} nuevos detectados · ${cambios.actualizaciones.length} cambios · ${cambios.sinCambios} sin cambios`;
+      actualizarProgresoImportacion(0, totalEscrituras, 'Subiendo archivo', totalFilasArchivo, resumenCambios);
 
       if (estado.usandoDatosDemo) {
-        agregarEmpleadosDesdeRegistros(registros);
-        const existentes = new Map(estado.asistencias.map((asistencia) => [claveAsistencia(asistencia), asistencia]));
-        let actualizados = 0;
-        let nuevos = 0;
-        registros.forEach((registro) => {
-          const existente = existentes.get(claveAsistencia(registro));
-          if (existente) {
-            Object.assign(existente, combinarNotaImportada(registro, existente), { id: existente.id });
-            actualizados++;
-            return;
-          }
-          const asistenciaNueva = { id: registro.id || `demo-import-${Date.now()}-${nuevos}`, ...registro };
+        const registrosParaGuardar = [
+          ...registrosNuevos,
+          ...cambios.actualizaciones.map(({ asistencia }) => asistencia)
+        ];
+        agregarEmpleadosDesdeRegistros(registrosParaGuardar);
+        cambios.actualizaciones.forEach(({ asistencia, existente }) => {
+          Object.assign(existente, asistencia, { id: existente.id });
+        });
+        registrosNuevos.forEach((registro, indice) => {
+          const asistenciaNueva = { id: registro.id || `demo-import-${Date.now()}-${indice}`, ...registro };
           estado.asistencias.push(asistenciaNueva);
-          existentes.set(claveAsistencia(asistenciaNueva), asistenciaNueva);
-          nuevos++;
         });
         estado.asistencias = ordenarPorFechaHoraDesc(estado.asistencias);
         guardarDatosLocales();
         poblarSelectoresEmpleado();
-        estadoImport.textContent = `${nuevos} registros nuevos y ${actualizados} registros actualizados en este navegador.`;
+        actualizarProgresoImportacion(totalEscrituras, totalEscrituras, 'Archivo subido completo', totalFilasArchivo);
       } else {
-        await agregarEmpleadosEnFirebase(registros);
-        const existentes = new Map(estado.asistencias.map((asistencia) => [claveAsistencia(asistencia), asistencia]));
-        const nuevosRegistros = [];
-        const actualizaciones = [];
-        registros.forEach((registro) => {
-          const existente = existentes.get(claveAsistencia(registro));
-          if (existente) {
-            actualizaciones.push(guardarAsistencia(combinarNotaImportada(registro, existente), existente.id));
-          } else {
-            nuevosRegistros.push(registro);
-          }
+        estadoImport.textContent = 'Subiendo archivo: registrando empleados...';
+        const registrosParaGuardar = [
+          ...registrosNuevos,
+          ...cambios.actualizaciones.map(({ asistencia }) => asistencia)
+        ];
+        if (totalEscrituras > 0) await agregarEmpleadosEnFirebase(registrosParaGuardar);
+        let completados = 0;
+        const TAMANO_LOTE_ACTUALIZACION = 40;
+        for (let i = 0; i < cambios.actualizaciones.length; i += TAMANO_LOTE_ACTUALIZACION) {
+          const lote = cambios.actualizaciones.slice(i, i + TAMANO_LOTE_ACTUALIZACION);
+          await Promise.all(lote.map(({ asistencia, existente }) =>
+            guardarAsistencia(asistencia, existente.id)
+          ));
+          completados += lote.length;
+          actualizarProgresoImportacion(completados, totalEscrituras, 'Subiendo archivo', totalFilasArchivo, resumenCambios);
+        }
+
+        const total = await importarAsistenciasMasivo(registrosNuevos, (importados) => {
+          actualizarProgresoImportacion(completados + importados, totalEscrituras, 'Subiendo archivo', totalFilasArchivo, resumenCambios);
         });
-        await Promise.all(actualizaciones);
-        const total = await importarAsistenciasMasivo(nuevosRegistros);
-        estadoImport.textContent = `${total} registros nuevos y ${actualizaciones.length} registros actualizados correctamente en Firebase.`;
+        actualizarProgresoImportacion(completados + total, totalEscrituras, 'Archivo subido completo', totalFilasArchivo);
       }
+      document.getElementById('detalle-progreso-importacion').textContent =
+        `${cambios.nuevos.length} datos nuevos · ${cambios.actualizaciones.length} actualizados · ${cambios.sinCambios} sin cambios · ${cambios.repetidos} repetidos omitidos · ${totalFilasArchivo} filas en el archivo.`;
       poblarSelectoresEmpleado();
-      estadoImport.classList.remove('hidden', 'text-red-400');
+      estadoImport.classList.remove('hidden', 'text-red-400', 'text-slate-400');
       estadoImport.classList.add('text-emerald-400');
       renderizarVistaActual();
     } catch (err) {
       console.error(err);
       estadoImport.textContent = `Error al importar: ${err.message}`;
-      estadoImport.classList.remove('hidden', 'text-emerald-400');
+      estadoImport.classList.remove('hidden', 'text-emerald-400', 'text-slate-400');
       estadoImport.classList.add('text-red-400');
+      const detalleProgreso = document.getElementById('detalle-progreso-importacion');
+      detalleProgreso.textContent = detalleProgreso.textContent
+        ? `${detalleProgreso.textContent} · Subida no completada.`
+        : 'No se pudo procesar el archivo. Revisa el error e inténtalo de nuevo.';
     }
     e.target.value = '';
   });
 }
 
+function clasificarCambiosAsistencia(registros) {
+  const existentes = new Map(estado.asistencias.map((asistencia) => [claveAsistencia(asistencia), asistencia]));
+  const clavesArchivo = new Set();
+  const nuevos = [];
+  const actualizaciones = [];
+  let sinCambios = 0;
+  let repetidos = 0;
+  registros.forEach((registro) => {
+    const clave = claveAsistencia(registro);
+    if (clavesArchivo.has(clave)) {
+      repetidos++;
+      return;
+    }
+    clavesArchivo.add(clave);
+
+    const existente = existentes.get(clave);
+    if (!existente) {
+      nuevos.push(registro);
+      return;
+    }
+
+    const asistencia = { ...combinarNotaImportada(registro, existente), id: existente.id };
+    if (asistenciasImportadasIguales(asistencia, existente)) {
+      sinCambios++;
+    } else {
+      actualizaciones.push({ asistencia, existente });
+    }
+  });
+
+  return { nuevos, actualizaciones, sinCambios, repetidos };
+}
+
+function asistenciasImportadasIguales(propuesta, existente) {
+  const campos = Object.keys(propuesta).filter((campo) => campo !== 'id' && campo !== 'creadoEn');
+  return campos.every((campo) =>
+    JSON.stringify(normalizarValorComparacion(propuesta[campo])) ===
+    JSON.stringify(normalizarValorComparacion(existente[campo]))
+  );
+}
+
+function normalizarValorComparacion(valor) {
+  if (valor == null || valor === '') return null;
+  if (Array.isArray(valor)) {
+    const elementos = valor.map(normalizarValorComparacion);
+    if (elementos.length > 0 && elementos.every((elemento) => elemento && typeof elemento === 'object' && 'campo' in elemento)) {
+      elementos.sort((a, b) => String(a.campo).localeCompare(String(b.campo)));
+    }
+    return elementos.length > 0 ? elementos : null;
+  }
+  if (typeof valor === 'object') {
+    const normalizado = Object.fromEntries(
+      Object.entries(valor)
+        .filter(([clave, contenido]) => clave !== 'creadoEn' && contenido != null && contenido !== '')
+        .sort(([claveA], [claveB]) => claveA.localeCompare(claveB))
+        .map(([clave, contenido]) => [clave, normalizarValorComparacion(contenido)])
+    );
+    return Object.keys(normalizado).length > 0 ? normalizado : null;
+  }
+  return valor;
+}
+
+function actualizarProgresoImportacion(completados, total, mensaje = 'Subiendo archivo', totalFilasArchivo = total, resumenCambios = '') {
+  const estadoImport = document.getElementById('estado-importacion');
+  const barra = document.getElementById('barra-progreso-importacion');
+  const porcentaje = document.getElementById('porcentaje-importacion');
+  const progressbar = barra?.parentElement;
+  const esCompleto = mensaje === 'Archivo subido completo';
+  const avance = total > 0 ? Math.min(100, Math.round((completados / total) * 100)) : esCompleto ? 100 : 0;
+
+  if (estadoImport) estadoImport.textContent = esCompleto
+    ? mensaje
+    : `${mensaje}: ${avance}%`;
+  if (barra) barra.style.width = `${avance}%`;
+  if (porcentaje) porcentaje.textContent = `${avance}%`;
+  if (progressbar) progressbar.setAttribute('aria-valuenow', String(avance));
+  if (!esCompleto) {
+    const detalle = document.getElementById('detalle-progreso-importacion');
+    if (detalle) detalle.textContent = `${completados} de ${total} escrituras confirmadas · ${totalFilasArchivo} filas en el archivo${resumenCambios ? ` · ${resumenCambios}` : ''}`;
+  }
+}
+
+function leerExcelEnSegundoPlano(archivo) {
+  if (typeof Worker === 'undefined') {
+    return Promise.reject(new Error('Este navegador no permite procesar Excel en segundo plano.'));
+  }
+
+  return archivo.arrayBuffer().then((contenido) => new Promise((resolve, reject) => {
+    const worker = new Worker(new URL('./excel-import-worker.js', import.meta.url));
+    worker.addEventListener('message', (event) => {
+      worker.terminate();
+      if (event.data.error) reject(new Error(event.data.error));
+      else resolve(event.data.registros);
+    }, { once: true });
+    worker.addEventListener('error', (event) => {
+      worker.terminate();
+      reject(new Error(event.message || 'No se pudo procesar el archivo Excel.'));
+    }, { once: true });
+    worker.postMessage(contenido, [contenido]);
+  }));
+}
+
 function claveAsistencia(asistencia) {
-  return `${asistencia.correo}|${asistencia.fecha}|${asistencia.hora}`;
+  return `${String(asistencia.correo || '').trim().toLowerCase()}|${asistencia.fecha}`;
 }
 
 function combinarNotaImportada(registro, existente) {
   const notaImportada = String(registro.nota || '').trim();
-  return { ...registro, nota: notaImportada || existente.nota || '' };
+  const jornadaExistente = existente.jornada || {};
+  const jornadaImportada = registro.jornada || {};
+  const jornada = { ...jornadaExistente };
+  Object.entries(jornadaImportada).forEach(([campo, valor]) => {
+    if (valor !== '' && valor != null) jornada[campo] = valor;
+  });
+  const datosExistentes = Array.isArray(existente.datosAdicionales) ? existente.datosAdicionales : [];
+  const datosImportados = Array.isArray(registro.datosAdicionales) ? registro.datosAdicionales : [];
+  const datosAnteriores = new Map(datosExistentes.map((dato) => [dato.campo, dato.valor]));
+  datosImportados.forEach((dato) => {
+    const valor = dato.valor === '' || dato.valor == null ? datosAnteriores.get(dato.campo) ?? dato.valor : dato.valor;
+    datosAnteriores.set(dato.campo, valor);
+  });
+  return {
+    ...registro,
+    nota: notaImportada || existente.nota || '',
+    jornada,
+    datosAdicionales: [...datosAnteriores].map(([campo, valor]) => ({ campo, valor }))
+  };
 }
 
 async function agregarEmpleadosEnFirebase(registros) {
@@ -706,9 +1254,14 @@ function configurarLimpiezaDatos() {
       if (MODO_PRUEBA_LOCAL) guardarDatosLocales();
       poblarSelectoresEmpleado();
       renderizarVistaActual();
-      document.getElementById('estado-importacion').textContent = 'Todos los datos fueron eliminados. Puedes cargar un archivo nuevo.';
-      document.getElementById('estado-importacion').classList.remove('hidden', 'text-red-400');
-      document.getElementById('estado-importacion').classList.add('text-emerald-400');
+      const estadoImport = document.getElementById('estado-importacion');
+      estadoImport.textContent = 'Todos los datos fueron eliminados. Puedes cargar un archivo nuevo.';
+      estadoImport.classList.remove('hidden', 'text-red-400', 'text-slate-400');
+      estadoImport.classList.add('text-emerald-400');
+      document.getElementById('progreso-importacion')?.classList.remove('hidden');
+      document.getElementById('porcentaje-importacion')?.classList.add('hidden');
+      document.getElementById('barra-progreso-importacion')?.parentElement.classList.add('hidden');
+      document.getElementById('detalle-progreso-importacion').textContent = '';
       mostrarToast('Todos los datos fueron eliminados.', 'exito');
     } catch (err) {
       console.error(err);
@@ -747,8 +1300,12 @@ function normalizarRegistroImportado(registro) {
   Object.keys(equipo).forEach((campo) => {
     const nombresCampo =
       campo === 'conoAsentamiento'
-        ? [campo, EQUIPO_LABELS[campo], 'Cono de Asentamiento', 'Cono Precaucion', 'Cono de Precaucion']
-        : [campo, EQUIPO_LABELS[campo]];
+        ? [campo, EQUIPO_LABELS[campo], 'Cono de Asentamiento']
+        : campo === 'conoPrecaucion'
+          ? [campo, EQUIPO_LABELS[campo], 'Cono de Precaucion']
+          : campo === 'brochaDensidad'
+            ? [campo, EQUIPO_LABELS[campo], 'Brocha dens']
+          : [campo, EQUIPO_LABELS[campo]];
     const valor = buscarValor(registro, nombresCampo);
     if (valor !== undefined) equipo[campo] = convertirBooleano(valor);
   });
@@ -756,12 +1313,54 @@ function normalizarRegistroImportado(registro) {
   const valorConoPrecaucion = buscarValor(registro, [
     'cono precaucion',
     'cono de precaucion',
-    'conoAsentamiento',
     'conoPrecaucion'
   ]);
   if (valorConoPrecaucion !== undefined) {
-    equipo.conoAsentamiento = convertirBooleano(valorConoPrecaucion);
+    equipo.conoPrecaucion = convertirBooleano(valorConoPrecaucion);
   }
+
+  const camposConocidos = new Set(
+    [
+      'id', 'correo', 'email', 'nombre', 'apellido', 'sitioCurso', 'sitio', 'sitio/curso',
+      'obra/curso', 'fecha', 'fechaEntrada', 'fechaIngreso', 'hora', 'horaEntrada', 'horaIngreso',
+      'geolocalizacion', 'geolocalizacionEntrada', 'coordenadas', 'nota', 'observacion',
+      'justificacion', 'motivo', 'comentario', 'notas', 'epp', 'equipo',
+      'fechaSalida', 'horaSalida', 'geolocalizacionSalida', 'horasOrdinarias', 'estado',
+      'fechaEntradaExtra', 'horaEntradaExtra', 'geolocalizacionEntradaExtra',
+      'fechaSalidaExtra', 'horaSalidaExtra', 'geolocalizacionSalidaExtra', 'horasExtras', 'horasTotales',
+      ...Object.keys(EPP_LABELS), ...Object.values(EPP_LABELS),
+      ...Object.keys(EQUIPO_LABELS), ...Object.values(EQUIPO_LABELS),
+      'Cono de Asentamiento', 'Cono Precaucion', 'Cono de Precaucion'
+    ].map(normalizarEncabezado)
+  );
+  const obtenerCampo = (nombres) => buscarValor(registro, nombres);
+  const fechaSalida = obtenerCampo(['fechaSalida']);
+  const fechaEntradaExtra = obtenerCampo(['fechaEntradaExtra']);
+  const fechaSalidaExtra = obtenerCampo(['fechaSalidaExtra']);
+  const horaSalida = obtenerCampo(['horaSalida']);
+  const horaEntradaExtra = obtenerCampo(['horaEntradaExtra']);
+  const horaSalidaExtra = obtenerCampo(['horaSalidaExtra']);
+  const jornada = {
+    fechaSalida: fechaSalida ? convertirFechaImportada(fechaSalida) : '',
+    horaSalida: horaSalida ? convertirHoraImportada(horaSalida) : '',
+    geolocalizacionSalida: obtenerCampo(['geolocalizacionSalida']) || '',
+    horasOrdinarias: convertirDuracionHoras(obtenerCampo(['horasOrdinarias'])),
+    estado: obtenerCampo(['estado']) == null ? '' : String(obtenerCampo(['estado'])),
+    fechaEntradaExtra: fechaEntradaExtra ? convertirFechaImportada(fechaEntradaExtra) : '',
+    horaEntradaExtra: horaEntradaExtra ? convertirHoraImportada(horaEntradaExtra) : '',
+    geolocalizacionEntradaExtra: obtenerCampo(['geolocalizacionEntradaExtra']) || '',
+    fechaSalidaExtra: fechaSalidaExtra ? convertirFechaImportada(fechaSalidaExtra) : '',
+    horaSalidaExtra: horaSalidaExtra ? convertirHoraImportada(horaSalidaExtra) : '',
+    geolocalizacionSalidaExtra: obtenerCampo(['geolocalizacionSalidaExtra']) || '',
+    horasExtras: convertirDuracionHoras(obtenerCampo(['horasExtras'])),
+    horasTotales: convertirDuracionHoras(obtenerCampo(['horasTotales']))
+  };
+  const datosAdicionales = Object.entries(registro)
+    .filter(([campo]) => !camposConocidos.has(normalizarEncabezado(campo)))
+    .map(([campo, valor]) => ({
+      campo,
+      valor: valor instanceof Date && !Number.isNaN(valor.getTime()) ? valor.toISOString() : valor
+    }));
 
   return {
     id: buscarValor(registro, ['id']) || '',
@@ -769,13 +1368,82 @@ function normalizarRegistroImportado(registro) {
     nombre: buscarValor(registro, ['nombre']) || '',
     apellido: buscarValor(registro, ['apellido']) || '',
     sitioCurso: buscarValor(registro, ['sitioCurso', 'sitio', 'sitio/curso', 'obra/curso']) || '',
-    fecha: convertirFechaImportada(buscarValor(registro, ['fecha'])),
-    hora: convertirHoraImportada(buscarValor(registro, ['hora'])),
-    geolocalizacion: buscarValor(registro, ['geolocalizacion', 'coordenadas']) || '',
+    fecha: convertirFechaImportada(buscarValor(registro, ['fecha', 'fechaEntrada', 'fechaIngreso'])),
+    hora: convertirHoraImportada(buscarValor(registro, ['hora', 'horaEntrada', 'horaIngreso'])),
+    geolocalizacion: buscarValor(registro, ['geolocalizacion', 'geolocalizacionEntrada', 'coordenadas']) || '',
     nota: buscarValor(registro, ['nota', 'observacion', 'justificacion', 'motivo', 'comentario', 'notas']) || '',
     epp,
-    equipo
+    equipo,
+    jornada,
+    datosAdicionales
   };
+}
+
+function escaparHTML(valor) {
+  return String(valor).replace(/[&<>"']/g, (caracter) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  })[caracter]);
+}
+
+function renderizarDatosAdicionales(datos) {
+  const entradas = Array.isArray(datos)
+    ? datos.map(({ campo, valor }) => [campo, valor])
+    : Object.entries(datos || {});
+  if (entradas.length === 0) return '<span class="text-slate-500">—</span>';
+
+  return `<details class="min-w-40">
+    <summary class="cursor-pointer text-xs font-medium text-blue-400">Ver ${entradas.length} campos</summary>
+    <dl class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+      ${entradas.map(([campo, valor]) => {
+        const texto = valor instanceof Date
+          ? valor.toLocaleString('es-GT')
+          : valor == null || valor === ''
+            ? '—'
+            : typeof valor === 'object'
+              ? JSON.stringify(valor)
+              : String(valor);
+        return `<div class="rounded border border-slate-700/70 bg-slate-950/40 px-2 py-1.5">
+          <dt class="text-[11px] text-slate-500">${escaparHTML(campo)}</dt>
+          <dd class="mt-0.5 break-words text-xs text-slate-200">${escaparHTML(texto)}</dd>
+        </div>`;
+      }).join('')}
+    </dl>
+  </details>`;
+}
+
+function renderizarJornadaYDatosExcel(jornada = {}, datosAdicionales = []) {
+  const camposJornada = [
+    ['Fecha salida', jornada.fechaSalida],
+    ['Hora salida', jornada.horaSalida],
+    ['Geolocalización salida', jornada.geolocalizacionSalida],
+    ['Horas ordinarias', jornada.horasOrdinarias == null ? '' : formatearDuracion(jornada.horasOrdinarias)],
+    ['Estado', jornada.estado],
+    ['Fecha entrada extra', jornada.fechaEntradaExtra],
+    ['Hora entrada extra', jornada.horaEntradaExtra],
+    ['Geolocalización entrada extra', jornada.geolocalizacionEntradaExtra],
+    ['Fecha salida extra', jornada.fechaSalidaExtra],
+    ['Hora salida extra', jornada.horaSalidaExtra],
+    ['Geolocalización salida extra', jornada.geolocalizacionSalidaExtra],
+    ['Horas extras', jornada.horasExtras == null ? '' : formatearDuracion(jornada.horasExtras)],
+    ['Horas totales', jornada.horasTotales == null ? '' : formatearDuracion(jornada.horasTotales)]
+  ];
+  const camposExtras = Array.isArray(datosAdicionales)
+    ? datosAdicionales.map(({ campo, valor }) => [campo, valor])
+    : Object.entries(datosAdicionales || {});
+  const campos = [...camposJornada, ...camposExtras];
+
+  return campos.map(([etiqueta, valor]) => {
+    const tieneValor = valor !== '' && valor != null;
+    const texto = valor && typeof valor === 'object' ? JSON.stringify(valor) : String(valor ?? '');
+    return `<div class="flex min-w-0 items-center justify-between gap-2 rounded-lg border ${
+      tieneValor ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-slate-700 bg-slate-800/40'
+    } px-3 py-2 text-sm">
+      <span class="min-w-0 text-slate-300">${escaparHTML(etiqueta)}</span>
+      <span class="max-w-[60%] shrink-0 break-words text-right text-xs ${tieneValor ? 'text-emerald-400' : 'text-slate-600'}">${
+        tieneValor ? `✓ ${escaparHTML(texto)}` : '—'
+      }</span>
+    </div>`;
+  }).join('');
 }
 
 function buscarValor(registro, nombres) {
@@ -992,10 +1660,11 @@ function renderizarHistorialEmpleado() {
   document.getElementById('historial-dias').textContent = metricas.totalDias;
   document.getElementById('historial-puntualidad').textContent = `${metricas.puntualidad}%`;
   document.getElementById('historial-cumplimiento').textContent = `${metricas.cumplimientoPromedio}%`;
+  renderizarResumenHorasEmpleado(estado.asistencias.filter((asistencia) => asistencia.correo === emp.correo));
 
   const tbody = document.getElementById('tabla-historial');
   if (registrosHistorial.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="6" class="py-6 text-center text-slate-500">Sin registros de asistencia.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" class="py-6 text-center text-slate-500">Sin registros de asistencia.</td></tr>`;
     return;
   }
   tbody.innerHTML = registrosHistorial
@@ -1016,6 +1685,7 @@ function renderizarHistorialEmpleado() {
           }">${calcularCumplimientoEppIndividual(a.epp)}%</span>`}
         </td>
         <td class="py-3 px-4 text-slate-400 text-xs">${a.nota ? a.nota : '—'}</td>
+        <td class="py-3 px-4"><div class="mb-3">${renderizarResumenJornada(a)}</div>${renderizarDatosAdicionales(a.datosAdicionales)}</td>
       </tr>`
     )
     .join('');
@@ -1156,8 +1826,7 @@ function renderizarAuditoria() {
       const filasChecklist = (labels, datos, tipo) =>
         Object.entries(labels)
           .map(([clave, etiqueta]) => {
-            const valor =
-              datos && (datos[clave] || (clave === 'conoAsentamiento' ? datos.conoPrecaucion : false));
+            const valor = datos && datos[clave];
             const activo = typeof valor === 'boolean' ? valor : convertirBooleano(valor);
             return `<div class="flex items-center justify-between rounded-lg border ${
               activo ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-slate-700 bg-slate-800/40'
@@ -1180,6 +1849,10 @@ function renderizarAuditoria() {
             ${a.id ? `<button type="button" data-auditoria-delete="${a.id}" class="rounded-lg border border-red-500/40 px-3 py-2 text-xs font-semibold text-red-400 hover:bg-red-500/10 transition-colors">Eliminar registro</button>` : ''}
           </div>
         </div>
+        <div class="mb-4 rounded-lg border border-slate-700 bg-slate-800/40 p-3">
+          <p class="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">Resumen de jornada</p>
+          ${renderizarResumenJornada(a)}
+        </div>
         <div class="grid gap-4 md:grid-cols-2">
           <div>
             <p class="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">Equipo de Protección Personal</p>
@@ -1187,7 +1860,7 @@ function renderizarAuditoria() {
           </div>
           <div>
             <p class="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">Equipo y Herramientas</p>
-            <div class="grid grid-cols-2 gap-2 max-h-64 overflow-y-auto pr-1">${filasChecklist(
+            <div class="grid max-h-80 grid-cols-1 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">${filasChecklist(
               EQUIPO_LABELS,
               a.equipo,
               'equipo'
@@ -1335,4 +2008,3 @@ function mostrarToast(mensaje, tipo = 'exito') {
 // ARRANQUE
 // ----------------------------------------------------------------------------
 document.addEventListener('DOMContentLoaded', iniciar);
-
