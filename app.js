@@ -337,6 +337,7 @@ function renderizarDashboard() {
   document.getElementById('kpi-sitio-top').textContent = sitioTop.sitio;
   document.getElementById('kpi-sitio-top-detalle').textContent = `${sitioTop.total} marcas registradas`;
 
+  renderizarEstadisticasMarcacion(asistenciasFiltradas, inicio, fin);
   renderizarResumenHorasDashboard();
 
   renderizarGraficaTendencia(asistenciasFiltradas, inicio, fin);
@@ -344,6 +345,79 @@ function renderizarDashboard() {
   renderizarGraficaPorcentajeHorasEmpleado(asistenciasFiltradas, inicio, fin);
   renderizarGraficaEppItems(asistenciasFiltradas);
   renderizarGraficaDistribucionSitio(asistenciasFiltradas);
+}
+
+function renderizarEstadisticasMarcacion(asistencias, inicio, fin) {
+  const tbody = document.getElementById('tabla-estadisticas-geolocalizacion');
+  if (!tbody) return;
+
+  const rango = document.getElementById('rango-estadisticas-marcacion');
+  if (rango) rango.textContent = `Rango contado: ${inicio} al ${fin}`;
+
+  const estadisticasPorCorreo = new Map(
+    estado.empleados.map((empleado) => [
+      empleado.correo,
+      { empleado, entradaSinUbicacion: 0, salidaSinUbicacion: 0, salidaPendiente: 0 }
+    ])
+  );
+  asistencias.forEach((asistencia) => {
+    if (asistencia.ausencia) return;
+    const estadistica = estadisticasPorCorreo.get(asistencia.correo);
+    if (!estadistica) return;
+
+    const jornada = asistencia.jornada || {};
+    const ubicacionEntrada = asistencia.geolocalizacion || asistencia.geolocalizacionEntrada;
+    const ubicacionSalida = jornada.geolocalizacionSalida || asistencia.geolocalizacionSalida;
+    const horaSalida = jornada.horaSalida || asistencia.horaSalida;
+    const fechaSalida = jornada.fechaSalida || asistencia.fechaSalida;
+    const salidaRegistrada = tieneDatoMarcacion(horaSalida)
+      || tieneDatoMarcacion(fechaSalida)
+      || tieneUbicacion(ubicacionSalida);
+
+    if (!tieneUbicacion(ubicacionEntrada)) estadistica.entradaSinUbicacion++;
+    if (salidaRegistrada && !tieneUbicacion(ubicacionSalida)) {
+      estadistica.salidaSinUbicacion++;
+    }
+    if (!salidaRegistrada) estadistica.salidaPendiente++;
+  });
+
+  const filas = [...estadisticasPorCorreo.values()]
+    .sort((a, b) =>
+      (b.entradaSinUbicacion + b.salidaSinUbicacion + b.salidaPendiente)
+        - (a.entradaSinUbicacion + a.salidaSinUbicacion + a.salidaPendiente)
+      || `${a.empleado.nombre} ${a.empleado.apellido}`.localeCompare(
+        `${b.empleado.nombre} ${b.empleado.apellido}`
+      )
+    );
+
+  if (filas.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" class="py-6 text-center text-slate-500">No hay trabajadores para mostrar.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = filas.map(({ empleado, entradaSinUbicacion, salidaSinUbicacion, salidaPendiente }) => `
+    <tr class="border-b border-slate-800">
+      <td class="py-3 px-4">
+        <p class="font-medium text-slate-200">${escaparHTML(`${empleado.nombre || ''} ${empleado.apellido || ''}`.trim() || 'Sin nombre')}</p>
+        <p class="text-xs text-slate-500">${escaparHTML(empleado.correo || '')}</p>
+      </td>
+      <td class="py-3 px-4 ${entradaSinUbicacion ? 'font-semibold text-amber-400' : 'text-slate-400'}">${entradaSinUbicacion}</td>
+      <td class="py-3 px-4 ${salidaSinUbicacion ? 'font-semibold text-amber-400' : 'text-slate-400'}">${salidaSinUbicacion}</td>
+      <td class="py-3 px-4 ${salidaPendiente ? 'font-semibold text-red-400' : 'text-slate-400'}">${salidaPendiente}</td>
+    </tr>`
+  ).join('');
+}
+
+function tieneDatoMarcacion(valor) {
+  if (valor == null) return false;
+  const texto = String(valor).trim().toLocaleLowerCase('es');
+  return texto !== '' && !['n/a', 'na', 'no disponible', 'sin ubicación', 'sin ubicacion'].includes(texto);
+}
+
+function tieneUbicacion(valor) {
+  if (!tieneDatoMarcacion(valor)) return false;
+  const ubicacion = String(valor).trim().replace(/\s/g, '');
+  return !/^0{7}-0{4}$/.test(ubicacion) && !/^0+(?:\.0+)?[,]0+(?:\.0+)?$/.test(ubicacion);
 }
 
 function configurarObjetivoJornada() {
@@ -1018,8 +1092,32 @@ function configurarFormularioImportacion() {
       }
 
       const totalFilasArchivo = registros.length;
-      estadoImport.textContent = `Preparando ${totalFilasArchivo} filas...`;
-      registros = registros.map(normalizarRegistroImportado);
+      const registrosConFila = registros
+        .map((registro, indice) => ({ registro, numeroFila: indice + 2 }))
+        .filter(({ registro }) => !esRegistroImportadoVacio(registro));
+      const filasVacias = totalFilasArchivo - registrosConFila.length;
+      estadoImport.textContent = `Preparando ${registrosConFila.length} registros...`;
+      const registrosNormalizados = registrosConFila.map(({ registro, numeroFila }) => ({
+        asistencia: normalizarRegistroImportado(registro),
+        numeroFila
+      }));
+      const filasSinFechaValida = registrosNormalizados
+        .filter(({ asistencia }) => !esFechaISOValida(asistencia.fecha))
+        .map(({ numeroFila }) => numeroFila);
+      const filasEjemploSinFecha = filasSinFechaValida.slice(0, 5).join(', ');
+      const filasRestantesSinFecha = filasSinFechaValida.length > 5
+        ? ` y ${filasSinFechaValida.length - 5} más`
+        : '';
+      const resumenFilasSinFecha = filasSinFechaValida.length > 0
+        ? ` · ${filasSinFechaValida.length} filas sin fecha válida omitidas (filas ${filasEjemploSinFecha}${filasRestantesSinFecha})`
+        : '';
+      const resumenFilasVacias = filasVacias > 0 ? ` · ${filasVacias} filas vacías omitidas` : '';
+      registros = registrosNormalizados
+        .filter(({ asistencia }) => esFechaISOValida(asistencia.fecha))
+        .map(({ asistencia }) => asistencia);
+      if (registros.length === 0) {
+        throw new Error('El archivo no contiene filas con una fecha válida. Revisa la columna de fecha.');
+      }
       const cambios = clasificarCambiosAsistencia(registros);
       const registrosNuevos = cambios.nuevos;
       const totalEscrituras = cambios.nuevos.length + cambios.actualizaciones.length;
@@ -1067,7 +1165,7 @@ function configurarFormularioImportacion() {
         actualizarProgresoImportacion(completados + total, totalEscrituras, 'Archivo subido completo', totalFilasArchivo);
       }
       document.getElementById('detalle-progreso-importacion').textContent =
-        `${cambios.nuevos.length} datos nuevos · ${cambios.actualizaciones.length} actualizados · ${cambios.sinCambios} sin cambios · ${cambios.repetidos} repetidos omitidos · ${totalFilasArchivo} filas en el archivo.`;
+        `${cambios.nuevos.length} datos nuevos · ${cambios.actualizaciones.length} actualizados · ${cambios.sinCambios} sin cambios · ${cambios.repetidos} repetidos omitidos · ${totalFilasArchivo} filas en el archivo${resumenFilasVacias}${resumenFilasSinFecha}.`;
       poblarSelectoresEmpleado();
       estadoImport.classList.remove('hidden', 'text-red-400', 'text-slate-400');
       estadoImport.classList.add('text-emerald-400');
@@ -1486,9 +1584,20 @@ function convertirBooleano(valor) {
 }
 
 function convertirFechaImportada(valor) {
-  if (!valor) return hoyISO();
+  if (!valor) return '';
   if (valor instanceof Date && !Number.isNaN(valor.getTime())) {
     return `${valor.getFullYear()}-${String(valor.getMonth() + 1).padStart(2, '0')}-${String(valor.getDate()).padStart(2, '0')}`;
+  }
+  const serialExcel = typeof valor === 'number'
+    ? valor
+    : typeof valor === 'string' && /^\d{5}(\.\d+)?$/.test(valor.trim())
+      ? Number(valor.trim())
+      : null;
+  if (serialExcel !== null && serialExcel >= 1 && serialExcel < 2958466) {
+    const fechaSerial = globalThis.XLSX?.SSF?.parse_date_code(serialExcel);
+    if (fechaSerial?.y && fechaSerial.m && fechaSerial.d) {
+      return `${fechaSerial.y}-${String(fechaSerial.m).padStart(2, '0')}-${String(fechaSerial.d).padStart(2, '0')}`;
+    }
   }
   const texto = String(valor).trim().replace(/\s+/g, ' ');
   if (/^\d{4}-\d{2}-\d{2}$/.test(texto)) return texto;
@@ -1509,6 +1618,22 @@ function convertirFechaImportada(valor) {
     }
   }
   return texto;
+}
+
+function esRegistroImportadoVacio(registro) {
+  return Object.values(registro).every((valor) =>
+    valor == null || (typeof valor === 'string' && valor.trim() === '')
+  );
+}
+
+function esFechaISOValida(valor) {
+  const coincidencia = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(valor));
+  if (!coincidencia) return false;
+  const [, anio, mes, dia] = coincidencia;
+  const fecha = new Date(Number(anio), Number(mes) - 1, Number(dia));
+  return fecha.getFullYear() === Number(anio)
+    && fecha.getMonth() === Number(mes) - 1
+    && fecha.getDate() === Number(dia);
 }
 
 function convertirHoraImportada(valor) {
@@ -2008,3 +2133,4 @@ function mostrarToast(mensaje, tipo = 'exito') {
 // ARRANQUE
 // ----------------------------------------------------------------------------
 document.addEventListener('DOMContentLoaded', iniciar);
+
