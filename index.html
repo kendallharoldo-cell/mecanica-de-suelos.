@@ -292,6 +292,25 @@
 
       <!-- ======================= VISTA 2: REGISTRO ======================= -->
       <section id="vista-registro" class="vista-panel hidden space-y-6">
+        <section class="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/60">
+          <div class="border-b border-slate-800 p-5">
+            <h3 class="text-sm font-semibold text-slate-200">Personal</h3>
+            <p class="mt-1 text-xs text-slate-500">Da de baja a un empleado para conservar su historial e impedir nuevos registros de asistencia.</p>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm">
+              <thead>
+                <tr class="border-b border-slate-800 text-xs uppercase tracking-wide text-slate-500">
+                  <th class="py-3 px-4">Empleado</th>
+                  <th class="py-3 px-4">Estado</th>
+                  <th class="py-3 px-4">Fecha de baja</th>
+                  <th class="py-3 px-4">Acción</th>
+                </tr>
+              </thead>
+              <tbody id="tabla-gestion-empleados"></tbody>
+            </table>
+          </div>
+        </section>
         <div class="grid grid-cols-1 gap-6 xl:grid-cols-3">
           <form id="form-registro" class="xl:col-span-2 space-y-5 rounded-xl border border-slate-800 bg-slate-900/60 p-6">
             <h3 class="text-sm font-semibold text-slate-200">Registrar Nueva Marca de Asistencia</h3>
@@ -500,4 +519,3 @@
 </script>
 </body>
 </html>
-
