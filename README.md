@@ -79,9 +79,12 @@ Si prefieres cargarlas a mano, puedes crear documentos con esta estructura:
   "seguroAccidente": "Sí",
   "celular": "5555-1000",
   "direccion": "Ciudad de Guatemala",
-  "estado": "Activo"
+  "estado": "Activo",
+  "fechaBaja": ""
 }
 ```
+
+En **Registro y Actualización → Personal** selecciona la fecha de baja en el calendario de cada empleado y confirma la acción. La app guarda la fecha elegida, conserva sus datos e historial y bloquea nuevas asistencias tanto desde el formulario como desde la importación masiva. Los empleados dados de baja siguen disponibles en el historial. Si se reactiva a alguien, vuelve a estar disponible para nuevos registros.
 
 **Colección `asistencias`:**
 ```json
@@ -212,8 +215,8 @@ Si usas el **modo abierto** de las reglas de Firestore (por defecto), este paso 
 
 | Vista | Descripción |
 |---|---|
-| 📊 Dashboard General | KPIs, tendencia diaria, cumplimiento de EPP por ítem, distribución por sitio |
-| ➕ Registro y Actualización | Formulario de marca de asistencia + importación masiva CSV/JSON |
+| 📊 Dashboard General | KPIs, tendencia diaria, cumplimiento de EPP por ítem, distribución por sitio e incidencias de geolocalización/salida pendientes por trabajador |
+| ➕ Registro y Actualización | Gestión de empleados y bajas + formulario de asistencia e importación masiva CSV/JSON/Excel |
 | 🔍 Validación Diaria | Tabla "Quién Marcó vs Quién Faltó" por fecha |
 | 👤 Historial por Empleado | Perfil, métricas individuales y tabla cronológica de marcas |
 | 🧰 Detalle de Equipo y Auditoría | Checklist completo de EPP y herramientas por empleado/fecha |
