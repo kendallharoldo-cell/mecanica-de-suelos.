@@ -141,6 +141,7 @@ function generarDatosDemo() {
 async function iniciar() {
   configurarNavegacion();
   configurarFormularioRegistro();
+  configurarGestionEmpleados();
   configurarFormularioImportacion();
   configurarLimpiezaDatos();
   configurarValidacionDiaria();
@@ -931,18 +932,136 @@ function poblarSelectoresEmpleado() {
   const opciones = activos
     .map((e) => `<option value="${e.correo}">${e.nombre} ${e.apellido} — ${e.correo}</option>`)
     .join('');
+  const todos = estado.empleados
+    .map((e) => `<option value="${e.correo}">${e.nombre} ${e.apellido} — ${e.correo}</option>`)
+    .join('');
 
   const selectRegistro = document.getElementById('registro-empleado');
   if (selectRegistro) selectRegistro.innerHTML = `<option value="">Selecciona un empleado…</option>${opciones}`;
 
   const selectHistorial = document.getElementById('historial-empleado');
-  if (selectHistorial) selectHistorial.innerHTML = `<option value="">Selecciona un empleado…</option>${opciones}`;
+  if (selectHistorial) selectHistorial.innerHTML = `<option value="">Selecciona un empleado…</option>${todos}`;
 
   const selectAuditoria = document.getElementById('auditoria-empleado');
   if (selectAuditoria)
-    selectAuditoria.innerHTML = `<option value="">Todos los empleados</option>${opciones}`;
+    selectAuditoria.innerHTML = `<option value="">Todos los empleados</option>${todos}`;
 
   poblarFiltroEmpleadosGrafica();
+  renderizarGestionEmpleados();
+}
+
+function configurarGestionEmpleados() {
+  document.getElementById('tabla-gestion-empleados')?.addEventListener('click', async (event) => {
+    const boton = event.target.closest('[data-cambiar-estado-empleado]');
+    if (!boton) return;
+
+    const empleado = estado.empleados.find((actual) => actual.id === boton.dataset.cambiarEstadoEmpleado);
+    if (!empleado) {
+      mostrarToast('No se encontró el empleado seleccionado.', 'error');
+      return;
+    }
+
+    const estaInactivo = empleado.estado === 'Inactivo';
+    const nuevoEstado = estaInactivo ? 'Activo' : 'Inactivo';
+    const fechaInput = boton.closest('tr')?.querySelector('[data-fecha-baja]');
+    const fechaBaja = estaInactivo ? '' : fechaInput?.value || '';
+    if (!estaInactivo && !fechaBaja) {
+      mostrarToast('Selecciona la fecha de baja antes de continuar.', 'error');
+      fechaInput?.focus();
+      return;
+    }
+    const mensaje = estaInactivo
+      ? `¿Deseas reactivar a ${empleado.nombre} ${empleado.apellido}?`
+      : `¿Confirmas la baja de ${empleado.nombre} ${empleado.apellido} con fecha ${fechaBaja}? Ya no se podrán guardar ni importar nuevas asistencias para esta persona.`;
+    if (!window.confirm(mensaje)) return;
+
+    boton.disabled = true;
+    try {
+      const cambios = { estado: nuevoEstado, fechaBaja };
+      if (estado.usandoDatosDemo) {
+        Object.assign(empleado, cambios);
+        guardarDatosLocales();
+      } else {
+        await guardarEmpleado(cambios, empleado.id);
+        Object.assign(empleado, cambios);
+      }
+      poblarSelectoresEmpleado();
+      renderizarVistaActual();
+      mostrarToast(estaInactivo ? 'Empleado reactivado.' : `Empleado dado de baja el ${fechaBaja}.`, 'exito');
+    } catch (err) {
+      console.error(err);
+      mostrarToast('No se pudo actualizar el estado del empleado. Revisa tu conexión y las reglas de Firebase.', 'error');
+      boton.disabled = false;
+    }
+  });
+}
+
+function renderizarGestionEmpleados() {
+  const tbody = document.getElementById('tabla-gestion-empleados');
+  if (!tbody) return;
+  tbody.replaceChildren();
+
+  if (estado.empleados.length === 0) {
+    const fila = document.createElement('tr');
+    const celda = document.createElement('td');
+    celda.colSpan = 4;
+    celda.className = 'py-6 px-4 text-center text-slate-500';
+    celda.textContent = 'No hay empleados registrados.';
+    fila.append(celda);
+    tbody.append(fila);
+    return;
+  }
+
+  estado.empleados
+    .slice()
+    .sort((a, b) => `${a.apellido} ${a.nombre}`.localeCompare(`${b.apellido} ${b.nombre}`, 'es'))
+    .forEach((empleado) => {
+      const estaInactivo = empleado.estado === 'Inactivo';
+      const fila = document.createElement('tr');
+      fila.className = 'border-b border-slate-800';
+
+      const nombre = document.createElement('td');
+      nombre.className = 'py-3 px-4';
+      const nombreCompleto = document.createElement('p');
+      nombreCompleto.className = 'font-medium text-slate-200';
+      nombreCompleto.textContent = `${empleado.nombre || ''} ${empleado.apellido || ''}`.trim() || 'Sin nombre';
+      const correo = document.createElement('p');
+      correo.className = 'text-xs text-slate-500';
+      correo.textContent = empleado.correo || '';
+      nombre.append(nombreCompleto, correo);
+
+      const estadoCelda = document.createElement('td');
+      estadoCelda.className = 'py-3 px-4';
+      estadoCelda.textContent = estaInactivo ? 'De baja' : 'Activo';
+      estadoCelda.classList.add(estaInactivo ? 'text-red-400' : 'text-emerald-400');
+
+      const fecha = document.createElement('td');
+      fecha.className = 'py-3 px-4 text-slate-400';
+      if (estaInactivo) {
+        fecha.textContent = empleado.fechaBaja || 'No registrada';
+      } else {
+        const fechaInput = document.createElement('input');
+        fechaInput.type = 'date';
+        fechaInput.dataset.fechaBaja = '';
+        fechaInput.setAttribute('aria-label', `Fecha de baja de ${empleado.nombre || ''} ${empleado.apellido || ''}`.trim());
+        fechaInput.className = 'rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-slate-200';
+        fecha.append(fechaInput);
+      }
+
+      const accion = document.createElement('td');
+      accion.className = 'py-3 px-4';
+      const boton = document.createElement('button');
+      boton.type = 'button';
+      boton.dataset.cambiarEstadoEmpleado = empleado.id;
+      boton.className = estaInactivo
+        ? 'rounded-lg border border-emerald-500/40 px-3 py-1.5 text-xs font-medium text-emerald-400 hover:bg-emerald-500/10'
+        : 'rounded-lg border border-red-500/40 px-3 py-1.5 text-xs font-medium text-red-400 hover:bg-red-500/10';
+      boton.textContent = estaInactivo ? 'Reactivar' : 'Dar de baja';
+      accion.append(boton);
+
+      fila.append(nombre, estadoCelda, fecha, accion);
+      tbody.append(fila);
+    });
 }
 
 function construirChecklist(contenedorId, labels, prefijo) {
@@ -998,6 +1117,11 @@ function configurarFormularioRegistro() {
       return;
     }
     const emp = estado.empleados.find((x) => x.correo === correo);
+    if (!emp || emp.estado === 'Inactivo') {
+      mostrarToast('Este empleado está dado de baja y no puede registrar asistencia.', 'error');
+      poblarSelectoresEmpleado();
+      return;
+    }
 
     const epp = crearEppVacio();
     document.querySelectorAll('[data-epp]').forEach((cb) => {
@@ -1118,6 +1242,20 @@ function configurarFormularioImportacion() {
       if (registros.length === 0) {
         throw new Error('El archivo no contiene filas con una fecha válida. Revisa la columna de fecha.');
       }
+      const correosDeBaja = new Set(
+        estado.empleados
+          .filter((empleado) => empleado.estado === 'Inactivo')
+          .map((empleado) => String(empleado.correo || '').trim().toLowerCase())
+      );
+      const cantidadRegistrosDeBaja = registros.filter((registro) =>
+        correosDeBaja.has(String(registro.correo || '').trim().toLowerCase())
+      ).length;
+      registros = registros.filter((registro) =>
+        !correosDeBaja.has(String(registro.correo || '').trim().toLowerCase())
+      );
+      if (registros.length === 0) {
+        throw new Error('El archivo solo contiene registros de empleados dados de baja; no se importó ninguna asistencia.');
+      }
       const cambios = clasificarCambiosAsistencia(registros);
       const registrosNuevos = cambios.nuevos;
       const totalEscrituras = cambios.nuevos.length + cambios.actualizaciones.length;
@@ -1165,7 +1303,7 @@ function configurarFormularioImportacion() {
         actualizarProgresoImportacion(completados + total, totalEscrituras, 'Archivo subido completo', totalFilasArchivo);
       }
       document.getElementById('detalle-progreso-importacion').textContent =
-        `${cambios.nuevos.length} datos nuevos · ${cambios.actualizaciones.length} actualizados · ${cambios.sinCambios} sin cambios · ${cambios.repetidos} repetidos omitidos · ${totalFilasArchivo} filas en el archivo${resumenFilasVacias}${resumenFilasSinFecha}.`;
+        `${cambios.nuevos.length} datos nuevos · ${cambios.actualizaciones.length} actualizados · ${cambios.sinCambios} sin cambios · ${cambios.repetidos} repetidos omitidos · ${cantidadRegistrosDeBaja} registros de empleados dados de baja omitidos · ${totalFilasArchivo} filas en el archivo${resumenFilasVacias}${resumenFilasSinFecha}.`;
       poblarSelectoresEmpleado();
       estadoImport.classList.remove('hidden', 'text-red-400', 'text-slate-400');
       estadoImport.classList.add('text-emerald-400');
@@ -2133,4 +2271,5 @@ function mostrarToast(mensaje, tipo = 'exito') {
 // ARRANQUE
 // ----------------------------------------------------------------------------
 document.addEventListener('DOMContentLoaded', iniciar);
+
 
