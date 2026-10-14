@@ -63,6 +63,7 @@ export function crearEppVacio() {
     chalecoReflectivo: false,
     guantes: false,
     botasPuntaAcero: false,
+    botasHule: false,
     barbiquejo: false,
     capaLluvia: false,
     extintor: false
@@ -99,6 +100,10 @@ export function crearEquipoVacio() {
     cajonPlastico: false,
     tamizUnaPulgadaYMedia: false,
     tamizTresCuartosPulgada: false,
+    tamiz16Pulgadas: false,
+    tamiz30Pulgadas: false,
+    masoHule: false,
+    comal: false,
     speedy: false,
     vidrioHumedad: false,
     estufaGasButano: false,
@@ -128,6 +133,7 @@ export const EPP_LABELS = {
   chalecoReflectivo: 'Chaleco Reflectivo',
   guantes: 'Guantes',
   botasPuntaAcero: 'Botas Punta de Acero',
+  botasHule: 'Botas de hule',
   barbiquejo: 'Barbiquejo',
   capaLluvia: 'Capa de Lluvia',
   extintor: 'Extintor'
@@ -162,6 +168,10 @@ export const EQUIPO_LABELS = {
   cajonPlastico: 'Cajón Plástico',
   tamizUnaPulgadaYMedia: 'Tamiz 1 1/2 plg.',
   tamizTresCuartosPulgada: 'Tamiz 3/4 plg',
+  tamiz16Pulgadas: 'Tamiz 16 plg',
+  tamiz30Pulgadas: 'Tamiz 30 plg',
+  masoHule: 'Maso de hule',
+  comal: 'Comal',
   vidrioHumedad: 'Vidrio Humedades',
   estufaGasButano: 'Estufa gas butano',
   speedy: 'Speedy',
@@ -322,5 +332,4 @@ export function sincronizarRealtime(callbackEmpleados, callbackAsistencias) {
     unsubAsistencias();
   };
 }
-
 
